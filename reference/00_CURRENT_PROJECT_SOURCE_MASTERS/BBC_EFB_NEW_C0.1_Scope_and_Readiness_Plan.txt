@@ -1,0 +1,285 @@
+BBC INTEGRATED EFB — NEW C0.1 SCOPE AND READINESS PLAN
+Version: 0.3 | Date: 23 November 2026
+Status: MIGRATION FREEZE — full C0.1 target retained; early runnable concept scope UNAPPROVED
+Owner approval: architecture/functional target and narrowly authorised Core component-code drafts; no full EFB application build or live simulator test.
+
+PURPOSE
+-------
+Give Main Development and the two specialist chats ONE compact, practical reference for moving the approved designs into a genuine first NEW C0.1 integrated EFB. Separate firmly: (a) approved project architecture/workflow, (b) proposed functional minimum and technical evaluation, (c) necessary owner decisions, and (d) implementation/test evidence. Do not replace the specialist masters or recreate a general feature wish list.
+
+1. PROJECT BASELINE / NON-NEGOTIABLE APPROVED DESIGN
+----------------------------------------------------
+- NEW project: NO active source code, application build, SimConnect implementation, Windows/MSFS validation or simulator performance baseline exists. Old C0.1–C0.3 are history, not an implementation baseline.
+- First future owner-authorised version is NEW C0.1. EVERY authorised concept/release build contains the established Dispatch, In-Flight and Logbook Sections and accessible Settings, even when some functions are explicitly labelled placeholders.
+- Approved dark, slim, borderless Windows 10/11 styling; the In-Flight right Modules launcher must remain accessible during resizing. Same approved visual language across Sections. The permanent bottom footer shows separate SimConnect and Flight Logging indicators with distinct ownership/actions.
+- Black Box Core: logical shared information gateway, one consumer-driven, centrally managed read-only MSFS 2020 SimConnect path, stable internal contracts and bounded processing. Not a mandatory separate process, server or LAN endpoint. MSFS 2024 remains for separate validation.
+- Black Box Flight Recorder (Logbook-owned): consumes Core observations; defines actual flights/events, logging state, record lifecycle, provenance, persistence, corrections, interruptions and pilot-facing Logbook UI.
+- Simulator receives performance priority. Local-first JSON/JSONL/TXT/CSV preferred; SQLite, mandatory cloud, unapproved external integration, network server and general aircraft controls not authorised. Fresh release = coherent complete independently buildable EFB tree; no overlapping ad hoc patches.
+
+2. OWNER-CONFIRMED C0.1 TARGET AND FEATURE FREEZE
+-------------------------------------------------
+APPROVED TARGET / PRIORITY: Freeze speculative new-feature design and focus on a FULL EFB CONCEPT with genuinely usable Logbook and LIVE read-only MSFS 2020 SimConnect-backed automatic Flight Logging (with manual override in the approved UX). The intended release must not be a Logbook-only app or fake working telemetry demo.
+NOT YET APPROVED: exact minimum flight fields/event rules, screen subset to be fully functional, specific aircraft range, source SDK/library, full UI customisation in C0.1, platform packages, acceptance criteria, individual intermediate build releases or authorisation to code/test/build.
+Approved UI visuals (Logbook Q1–Q14) remain the design reference. Not every illustrated advanced interaction/metric is automatically a C0.1 deliverable.
+
+3. PROPOSED FIRST IMPLEMENTATION SUBSET (OWNER MUST APPROVE)
+-------------------------------------------------------------
+A. SHELL / APPLICATION-WIDE
+- Working slim borderless window: launch, navigation, Settings, resize/maximise/restore/minimise/close; ensure Modules launcher never disappears. Retain both footer indicators even in narrow windows.
+- Dispatch: full themed section with realistic CLEARLY NON-LIVE placeholders for unimplemented services.
+- In-Flight: full themed section with accessible anchored Modules launcher and realistic CLEARLY NON-LIVE modules; working shared shell interactions. Candidate Aircraft Status information may be live only where actually implemented and verified.
+- Settings: accessible SimConnect connection controls and diagnostics; Flight Logging & Privacy explanation accurate to actual behaviour; Logbook view preferences and Data Management entry where selected. Actions not implemented should be labelled unavailable.
+- Shared customisable panel system is APPROVED in design for Logbook/In-Flight, but whether its full drag/resize/preset functionality ships in C0.1 is OPEN. Do not let advanced panel docking block reliable flight logs.
+B. LOCAL LOGBOOK
+- Working manual flight creation with four approved required fields: aircraft type, From, To and flight date; remaining fields optional, honest unknown values, local durable save/read.
+- A practical usable Flight History and in-EFB Flight Details overlay; search/filter/edit and original-value/correction provenance to the extent specifically approved for the milestone. Existing approved Table/Cards/Combined modes remain design intent; which modes work in the first build is OPEN.
+- A Logbook Dashboard, Recorder Management and Statistics page present in the shell; only actual implemented summaries/actions are interactive, the rest explicitly placeholders.
+- Confirmed diversions appear only when pilot-confirmed; optional crew/PAX/baggage/freight/payload may be manually entered if included, never fabricated from SimConnect station data.
+C. LIVE MSFS 2020 / CORE / RECORDER
+- One centrally managed read-only simulator source; honest connected/disconnected/reconnecting/quality state and traceable, bounded observations.
+- Essential flight state and timing signals support a MINIMUM credible auto-start, takeoff, landing and completion workflow subject to Logbook event-rule approval. Manual override and confirmation before active Stop Logging.
+- Save a genuine local flight record and expose Recorder health/active state independently of simulator connection. Preserve interruptions honestly; no silent gaps or invented landing-rate/ICAO information.
+- PMDG 737 is only an INITIAL vendor-feasibility research target; its adapter is not committed for C0.1. Generic SimConnect logging should remain usable without it. FSUIPC7 is an optional secondary/alternative, not required or rejected.
+
+4. PROPOSED PHASED DELIVERY / REVIEW ORDER — NOT BUILD AUTHORISATION
+-------------------------------------------------------------------
+0. Owner reviews this intended subset and essential functional acceptance. Agree one decision at a time.
+1. Main evaluates Python UI framework choices (including PySide6/Qt and Tkinter), Windows compatibility, packaging, licence, memory/UI overhead and required resize/customisation functionality. Python remains preferred; no framework chosen yet.
+2. Core documents/evaluates existing SimConnect Python library candidates FIRST, with ctypes/native fallback if unsuitable. Owner selects exact wrapper/binding only after checking data events, support, packaging, licence and performance. No candidate is approved by being listed.
+3. Logbook/owner agree minimum event rules and timestamps (flight start/end, takeoff/touchdown, off/on-block if supported, pauses, multiple legs/circuits, interrupted/partial record handling). Core maps those requirements to VERIFIED data and freshness. Main approves shared contract boundaries.
+4. After separate explicit implementation authorisation: build coherent full EFB shell and local Logbook, integrate Core and automatic Flight Logging, run staged Windows/MSFS checks and fix reliability/performance problems. Every delivered authorised build is the COMPLETE EFB, not a separate feature-only demo.
+5. Owner reviews actual working concept on Windows and MSFS 2020; refine ONLY needed C0.1 defects or usability issues before reconsidering any new feature design.
+
+5. PROPOSED C0.1 VERIFICATION / ACCEPTANCE MATRIX (UNAPPROVED)
+-------------------------------------------------------------
+Each test must be performed and recorded on actual stated Windows and MSFS hardware/software before claiming PASS. Evidence status today: NOT TESTED for every item.
+- Windows: launch, resize narrow/wide, minimise, restore, taskbar-safe maximise, close; accessible navigation, Settings, right Modules launcher and dual footer.
+- Offline: show honest simulator-disconnected status; manual log entry, saved history, corrections and relevant settings continue without simulator.
+- SimConnect: genuine MSFS 2020 standard aircraft connect, identified source, appropriate units, connection state, shared demand-driven subscriptions; no raw mock telemetry represented as live.
+- Recorder: one approved normal flight scenario with observable start, takeoff, touchdown, completion, manual start/stop override and durable saved record; data gaps exposed and source preserved.
+- Time/edge cases: ordinary Pause, Active Pause, sim-rate changes, UTC midnight, touch-and-go/circuits and multi-leg cases must either meet explicitly approved behaviour or be visibly classed as unsupported/incomplete (no invented results).
+- Resilience: simulator not running, delayed launch, disconnect, reconnect, simulator/aircraft reload, minimised recording, application shutdown/crash and safe incomplete-log recovery. Record what was actually tested.
+- Data: observed vs derived vs pilot-entered/imported origin; missing fields, original values/edits, incomplete payload/landing-rate labelling, preservation of imported/manual records without bogus native gaps.
+- Performance: repeatable simulator-only baseline vs EFB active/idle/minimised; CPU, RAM, GPU, disk, connection requests, simulator average FPS and especially frame-time distributions/spikes. Historical under 1% idle CPU, under 3% average CPU and under 300 MB RAM remain PROVISIONAL, not a claimed gate or achieved result.
+- Packaging: complete source tree, pinned reviewed dependencies, PyInstaller/SDK redistribution research, clean build, instructions, release identity/changelog, limitations and actual tests/untested items.
+
+6. SEQUENTIAL DECISION GATES — ALL REMAIN OPEN EXCEPT APPROVED EVALUATION ORDER
+------------------------------------------------------------------------------
+DECISION A — FUNCTIONAL C0.1 MINIMUM: Which listed Logbook interactions and Recorder outcomes must genuinely work, vs labelled placeholder? Main proposes; owner approves.
+DECISION B — PYTHON UI FRAMEWORK: Evaluate PySide6/Qt, Tkinter and relevant alternatives against established UI requirements, overhead, licence, packaging and maintainability; owner approves selection.
+DECISION C — SIMCONNECT WRAPPER/BINDING: APPROVED to EVALUATE existing Python wrappers FIRST with direct SDK bindings fallback. Exact library, version, DLL, worker model and packaging still require evidence and owner approval.
+DECISION D — RECORDER SEMANTICS: Logbook proposes and owner decides start/end, flight-time/clock, pause/Active Pause, touchdown validity, circuits/multi-legs, log retention and interrupted-flight recovery; Core validates telemetry support.
+DECISION E — CORE DATA CONTRACT AND RATES: Main/owner review Core's proposed subscription/observation/status contract, source/freshness rules, failure isolation and practical cadence after technical evaluation.
+DECISION F — OPTIONAL DATA AND ADD-ONS: PMDG 737 research only initially; no selected adapter. FSUIPC7 remains optional secondary/alternative pending evidence; no approval to exclude or include it in C0.1.
+DECISION G — IMPLEMENT / TEST / BUILD AUTHORISATION: Separate explicit approval required. A planned sequence and prepared documentation are not that approval.
+
+7. RESEARCH SOURCES AND DOCUMENT AUTHORITY
+-----------------------------------------
+Current Source basis at time of draft (owner will confirm update):
+- BBC_EFB_Project_Development_Record.txt v1.7 -> proposed v1.8
+- BBC_EFB_Development_Chat_Register.txt v1.7 -> proposed v1.8
+- BBC_EFB_SimConnect_Integration_Development_Record.txt v0.5 -> proposed v0.6
+- BBC_EFB_SimConnect_Data_Requirements_Register.txt v0.2 -> proposed v0.3
+- BBC_EFB_Aircraft_Plugin_Development_Framework.txt v0.3 -> proposed v0.4
+- BBC_EFB_Logbook_Design_Record.docx v1.0 (unchanged)
+- BBC_EFB_UI_Design_Standards.docx v1.0 (unchanged)
+- Founding Project Master Prompt, logo and Source concept image (unchanged)
+Supporting specialist handoffs, 23 Nov 2026: Logbook telemetry research (8 pages) and Black Box Core C0.1 research (7 pages). They remain supporting evidence, not active competing masters.
+All candidate SDK names/units/PMDG claims need the technical validation specified in the updated Data Register. Owner approval remains required for technical selections, exact scope, code, testing and builds. No Source attachment is considered replaced until the owner confirms upload.
+
+REVISION HISTORY
+----------------
+2026-11-23 — v0.1: New implementation-readiness planning record reflecting the owner-confirmed feature freeze and complete NEW C0.1 EFB/Logbook/SimConnect goal. Separates approved direction from proposed minimum functional scope, alternatives, research validation, test planning and sequential owner gates. No new application code, simulator tests or builds authorised.
+
+
+8. CURRENT OWNER-APPROVED C0.1 ARCHITECTURE AND FUNCTIONAL SCOPE — 23 NOVEMBER 2026 (v0.2)
+--------------------------------------------------------------------------------------------------
+The decisions below were made AFTER the original v0.1 planning draft. They
+are authoritative C0.1 directions when this updated Source is confirmed by
+owner; they supersede older v0.1 'not approved' snapshots only as specified.
+They do NOT authorise the next full EFB build or Windows/MSFS tests.
+
+MAIN / UI FRAMEWORK AND RUNTIME
+- Python + PySide6 / Qt Widgets selected for UI direction; specific version,
+  Windows/licensing/packaging/performance evidence still outstanding.
+- NEW C0.1: modular, ONE PROCESS, responsibility-based packages under an
+  independent buildable full-EFB source tree; in-process versioned Core
+  consumer interfaces and event notifications. Core and Flight Recorder
+  remain independent logical components, not a shared monolith.
+- NEW C0.2+: the owner's intended architecture has separate EFB UI, Core
+  and Recorder processes, with coordinated IPC and start/stop supervision.
+  Migration complexity, frame-time/CPU costs and reliability require review.
+- UI load on demand; initial Section Dispatch. Essential Recorder/Core
+  services can continue with other Sections open or the EFB minimised.
+- HYBRID ADAPTIVE layout: reflow when practical, protect min usable widths,
+  scroll as needed; right-side Modules launcher and dual footer always
+  accessible. C0.1 BASIC saved layout/display/visibility preferences;
+  C0.2+ FULL approved drag/resize/dock/customisation implementation.
+- Active Flight Logging on app close -> Cancel or Save & Exit; preserve
+  incomplete record, never silently convert to completed flight.
+
+LOCAL FILES / DISTRIBUTION
+- Pilot must choose a writable data directory on FIRST LAUNCH. Documents,
+  a dedicated C: path or a custom folder are allowed, not a hidden mandatory
+  AppData records folder. Treat OneDrive Documents redirection and root-path
+  permission issues honestly. All actual flight records remain accessible.
+- Component-owned records/configuration, shared safe file utilities and
+  exclusive record write ownership. Per-record format, atomic update/recovery,
+  migration and multi-process concurrency remain implementation decisions.
+- NEW C0.1 distribution: PORTABLE ZIP with whole independently buildable
+  application source and clear Windows launch/build instructions. No
+  installer until separately reviewed.
+
+OWNER-APPROVED OPTION B — FULL LOGBOOK FUNCTIONAL C0.1 TARGET
+- Implement the EXISTING APPROVED Logbook experience (Q1–Q14), not a
+  Recorder-only or deliberately reduced Logbook. Present Dashboard, full
+  Flight History Table/Cards/Combined, Flight Details overlay and tabs,
+  manual/native-record editing with correction/provenance, Recorder
+  Management, Statistics/operational summaries, and appropriate Settings,
+  exports and separate restorable backup controls as functionality permits.
+- Real MSFS 2020 read-only SimConnect is required for native automatic
+  Flight Logging. No fabricated flight details, ICAOs, landing rates,
+  payload values, or unsupported G-force. Conditional metrics must honestly
+  show unavailable/unknown or require proper pilot confirmation.
+- Advanced shared layout drag/dock/customisation is already deferred to
+  C0.2+ by owner decision. Likewise owner has PARKED aircraft/add-on plugins
+  and user-installable developer modules until a separate discussion;
+  'full Logbook' DOES NOT automatically reinstate speculative freight
+  assignment/manifests, cloud integrations, extra aircraft adapters or
+  high-rate black-box analysis not previously approved.
+- Flight Recorder first/last event logic, actual timing and pause/circuit/
+  multi-sector handling, error recovery, exact file schema, import formats
+  and acceptance evidence remain individually unapproved. Logbook Dev owns
+  recorder semantics, Core Dev owns feasibility, Main approves integration.
+
+9. INDEPENDENT BLACK BOX CORE DEVELOPMENT AND CURRENT EVIDENCE (v0.2)
+-------------------------------------------------------------------
+- Approved: generic-purpose Core data framework serving future internal
+  modules; dynamic supported typed/indexed SimVar and system event requests,
+  shared demand-driven subscriptions, provenance/quality and recoverable
+  connection management. Not a hard-coded Logbook-only connection.
+- Future controlled write commands (e.g. radio frequencies) remain a
+  design extension requiring validated capability, permission and separate
+  owner approval. Initial C0.1 simulator activity is READ ONLY.
+- simconnect-H v0.7.2 is FIRST library evaluation target, NOT committed.
+  The owner provided release .whl and source .tar.gz packages, now available
+  for ACTUAL package API inspection. No package import/integration/Windows
+  compatibility is confirmed merely by possessing the files.
+- Draft Core foundation and corrected thin adapter SOURCE ZIP exist; only
+  specifically authorised component coding was undertaken. Not a C0.1
+  application build or source-of-truth production Core library.
+- The 23 Nov Stage 1 report records 3/3 broker tests and 5/5 simulated-
+  wrapper checks PASS. None constitutes installed third-party v0.7.2,
+  Windows/MSFS 2020, touchdown, reliability or performance verification.
+- User-installable plugin execution, public external SDK, aircraft plugin
+  choices and their security/trust decisions are deliberately UNSELECTED.
+- Practical development sequence: inspect supplied package, then PAUSE for
+  user discussion about Windows/MSFS test setup and read-only diagnostic
+  monitoring/sharing. No unsupervised remote access or test collector code
+  has been authorised. Only after separate owner authorisation start
+  simulator integration validation and complete EFB implementation/testing.
+- Extended third-party legal/licensing compliance review will occur BEFORE
+  FIRST BETA by owner direction; baseline dependency feasibility still
+  applies at integration time.
+
+10. STILL-OPEN IMPLEMENTATION / APPROVAL GATES (v0.2)
+----------------------------------------------------
+A. Actual v0.7.2 package/source vs adapter API signatures, callbacks,
+   wrapper-native reconnect, rate limits and precise sub-second sampling.
+B. Final Core data/event/command contracts, concurrency and shared consumer
+   lifecycle; current source contracts are DRAFTS, not final developer SDK.
+C. Logbook/owner-approved flight start/end, takeoff, touchdown, pause/time,
+   interruption/recovery and storage semantics; acceptance and edge cases.
+D. Pilot-approved Windows/MSFS 2020 testing/diagnostics arrangements and
+   measured simulator FPS/frame-time baseline (no test executed yet).
+E. Full C0.1 application source/code/build authorisation and a complete
+   functional/tested release; the independent Core draft is not enough.
+F. C0.2 separate-process IPC/supervision and full advanced panel layout
+   decisions/validation, to be addressed before that release.
+
+REVISION HISTORY ADDENDUM
+2026-11-23 — v0.2: Added all subsequent owner-approved Main implementation
+choices, full Q1–Q14 Logbook C0.1 functional target (advanced layouts
+excepted), independent reusable Core and future controlled commands, first
+simconnect-H evaluation and owner-supplied package availability, limited
+component-code and 8/8 synthetic/offline test evidence, and requested pause
+for Windows/MSFS testing/diagnostic discussion. Preserved full v0.1 plan and
+existing constraints. No complete EFB build, native MSFS test or full
+simulator integration approval.
+
+
+11. OWNER HALT / CODEX MIGRATION READINESS CHECKPOINT — 23 NOVEMBER 2026 (v0.3)
+-------------------------------------------------------------------------------
+OWNER DECISION — HALT AND PRESERVE
+The owner decided on 23 November 2026 to migrate the ENTIRE BBC Integrated
+EFB development project to Codex and stopped implementation progression.
+The owner approved creating a complete updated Source master batch, not a
+runnable whole-EFB concept, more Core code, a build or further live testing.
+Source files are proposed full replacements pending owner review and upload.
+
+LATEST CORE EVIDENCE (SUPERSEDES OLDER STAGE 1 AS LATEST, NOT AS HISTORY)
+- Black Box Core R3.1 is the latest complete SOURCE CANDIDATE, not a selected
+  production baseline, a simulator-verified component or a finished EFB.
+- 31/31 guarded simulated tests passed under Windows CPython 3.12.14 x64;
+  no failures/errors/skips, real DLL usage or live connection in the suite.
+- Actual supplied simconnect-H v0.7.2 wheel imported on Windows; basic
+  adapter signatures/ctypes and closed-client calls were verified without
+  loading the native DLL or contacting a simulator.
+- A separate SHA-256-verified x64 MSFS SDK 0.24.6.0 SimConnect.dll loaded,
+  with all 12 wrapper-declared exports resolved, with ZERO native calls.
+- A separately approved live smoke-test PREFLIGHT could not proceed:
+  supplied wheel and source omit loader helper imports in client.py;
+  load_dll() raises NameError before native session opening (line 215 with
+  explicit SDK DLL path). MSFS was not running and no live connection began.
+- Wrapper native unsubscribe/close outcomes, lock order, event payloads,
+  real telemetry cadence/quality, pause/landing data and simulator FPS/frame
+  times remain unverified. SDK DLL load is not live integration acceptance.
+
+WHOLE-EFB BUILD DISCUSSION — PROPOSAL, NOT APPROVED SCOPE
+Option A (Main RECOMMENDED): an INTERNAL, runnable concept containing the
+entire Dispatch/In-Flight/Logbook/Settings shell, dual footer indicators,
+manual flight entry, save/reopen/edit, real stored History and appropriate
+read-only calculated Dashboard/Statistics. All non-operational integrations
+would be unambiguously labelled inactive/placeholder. Resolve wrapper and
+Recorder work in parallel and add genuine automatic logging later.
+Option B: wait until actual automatic live MSFS 2020 logging is ready before
+the FIRST runnable complete EFB concept.
+The owner HALTED before choosing A or B. Neither option is an authorised
+implementation task or an approved reduced NEW C0.1 release scope.
+
+RETAINED NEW C0.1 ACCEPTANCE TARGET
+- EVERY authorised application build includes usable Dispatch, In-Flight,
+  Logbook, accessible Settings and two separate permanent footer states.
+  Dark slim borderless Windows PySide6/Qt Widgets, Dispatch start, responsive
+  adaptation and right Modules launcher on In-Flight remain approved.
+- Owner-approved FULL Logbook Q1-Q14 functional experience (excluding full
+  advanced C0.2+ layout controls) with real read-only MSFS 2020 automatic
+  Flight Logging and manual override remains the NEW C0.1 target.
+- Unknown/unavailable data must be honest; no fabricated aircraft, landing
+  rate, ICAO, payload, event or mock-live status. Manual data must persist.
+- First-launch selectable writable folder, component-owned data, resilient
+  safe writes, event/measurement provenance and privacy controls are retained.
+  Recorder phase/time/pause/landing/circuits/interrupted-flight rules remain
+  subject to owner approval; no Recorder implementation exists yet.
+- NEW C0.1 remains one modular process; C0.2+ intends separated processes.
+  Portable ZIP with complete source and Windows verification evidence remains
+  the desired distribution model once a build is separately authorised.
+
+NEXT OWNER DECISIONS — ONLY AFTER CODEX MIGRATION CUTOVER
+1. Verify complete replacement Sources and local Codex source/test evidence.
+2. Resolve simconnect-H loader via separately approved corrected evaluation
+   copy or distribution; repeat DLL preflight; require separate approval for
+   parked-aircraft, bounded READ-ONLY MSFS 2020 smoke testing.
+3. Agree exact Recorder event, timing, reliability and storage rules.
+4. Discuss and select Option A or B FIRST BUILD approach, then separately
+   approve concrete build scope before writing/building the full EFB.
+5. Define acceptance/performance checks and verify actual Windows/MSFS
+   behaviour, including simulator frame times and a clean packaged source.
+
+REVISION HISTORY ADDENDUM
+2026-11-23 — v0.3: Preserved full approved v0.2 architecture and Q1-Q14
+C0.1 target; recorded R3.1 31-test simulated pass, real Windows wrapper/
+SDK load-only checks, blocked live preflight, implementation halt and
+migration to Codex, and explicitly UNAPPROVED internal manual-first Option A
+versus automatic-first Option B. No full EFB build or new implementation
+approval was granted.

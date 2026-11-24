@@ -1,0 +1,176 @@
+# SimConnect function dictionary
+
+MSFS 2020 SDK **0.24.6.0**, Windows x64. Inventory checked **24 November 2026**.
+
+All **91** SimConnect function declarations in the installed [SDK header](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h>) matched by name against **91** exports in the installed x64 DLL. The DLL export table was read from disk. This check made no DLL loads, SimConnect calls or simulator connections. Microsoft’s [MSFS 2020 API reference](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) provides behaviour and parameter details. The SDK header is the source for exact prototypes. [Inventory verification](../reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_simconnect_dictionary_2026-11-24/REPORT.md)
+
+| Status | Meaning |
+|---|---|
+| **Core path** | Used by the current direct adapter. Its symbol resolved in the prior load-only preflight. Current behaviour is supported by offline evidence. |
+| **Offline path** | Implemented in the direct adapter and exercised with an in-memory SDK. The export resolved during the expanded load-only check. Simulator runtime behavior remains unverified. |
+| **Host helper** | Implemented and tested offline as an adapter diagnostic or buffer/transport helper. It is outside the consumer API. |
+| **Experimental** | Retained in the public API at the owner's request. The SDK documents possible silent behavior in MSFS 2020. Treat dispatch without a reply as unverified. |
+| **Pending** | Present in the header and DLL. Core has no implementation for the function yet. |
+| **Deprecated** | Microsoft marks the function as deprecated or replaced. Export presence alone provides no basis for use. |
+| **Unsupported** | Microsoft documents a runtime support limitation despite the header declaration and DLL export. |
+| **Header only** | Present in the header and DLL. This review found no matching Microsoft MSFS 2020 reference entry for the function. |
+
+The current adapter uses **67** functions, including experimental operations and host helpers. All 67 resolved in the expanded guarded load-only check. Live callback-based probes on the Asobo 747-8i and PMDG 737-800BCF exercised the selected read-only connection, telemetry and aircraft Input Event discovery paths. Most rows still await live validation. The list describes the underlying provider surface. Modules use capability IDs from the [Core Consumer API guide](05_CORE_AND_SIMCONNECT.md#consumer-api-developer-guide). Use Microsoft’s [SimVar index](https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Simulation_Variables.htm) for variable names and units and the [Event ID index](https://docs.flightsimulator.com/html/Programming_Tools/Event_IDs/Event_IDs.htm) for simulator command names. Both are inputs to the Core data dictionary. MSFS 2024 has its own [SDK reference](https://docs.flightsimulator.com/msfs2024/retail/programming-apis/simconnect/simconnect-sdk/) and requires separate inventory and validation. [Expanded preflight](../reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_sdk_dll_expanded_preflight_2026-11-24/REPORT.md) · [Live 747-8i probe](../reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_live_readonly_2026-11-24/DEFAULT_RETRY.md) · [Live PMDG comparison](../reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_live_readonly_2026-11-24/PMDG_READONLY.md)
+
+## Connection, dispatch and diagnostics
+
+| Function | Purpose | Status | SDK declaration |
+|---|---|---|---|
+| [SimConnect_Open](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/General/SimConnect_Open.htm) | Open a SimConnect session and receive the server's OPEN or exception packet. | Core path | [954](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:954>) |
+| [SimConnect_Close](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/General/SimConnect_Close.htm) | Release a session handle and its associated requests. | Core path | [951](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:951>) |
+| [SimConnect_GetNextDispatch](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/General/SimConnect_GetNextDispatch.htm) | Retrieve the next packet from the receive queue without a callback. | Core path | [956](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:956>) |
+| [SimConnect_CallDispatch](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/General/SimConnect_CallDispatch.htm) | Process the next packet using a client-supplied callback. | Host helper | [955](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:955>) |
+| [SimConnect_GetLastSentPacketID](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Debug/SimConnect_GetLastSentPacketID.htm) | Get the last sent packet ID for correlating asynchronous exceptions. | Core path | [953](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:953>) |
+| [SimConnect_RequestResponseTimes](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Debug/SimConnect_RequestResponseTimes.htm) | Measure response times using a caller-supplied array. | Host helper | [957](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:957>) |
+| [SimConnect_RetrieveString](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Debug/SimConnect_RetrieveString.htm) | Read a variable-length string from a received packet. | Host helper | [952](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:952>) |
+| [SimConnect_InsertString](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Debug/SimConnect_InsertString.htm) | Pack a variable-length string into a caller-supplied buffer. | Host helper | [958](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:958>) |
+| [SimConnect_RequestSystemState](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/General/SimConnect_RequestSystemState.htm) | Request a named simulator state, such as aircraft loaded or simulator running. | Offline path | [964](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:964>) |
+| `SimConnect_SetSystemState` | Declared and exported. Microsoft marks it unsupported in the system state packet reference. | Unsupported | [965](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:965>) |
+
+## Simulator object data
+
+| Function | Purpose | Status | SDK declaration |
+|---|---|---|---|
+| [SimConnect_AddToDataDefinition](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_AddToDataDefinition.htm) | Add a variable name, unit and type to a data definition. | Core path | [915](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:915>) |
+| [SimConnect_ClearDataDefinition](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_ClearDataDefinition.htm) | Remove all fields from a data definition. | Core path | [916](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:916>) |
+| [SimConnect_RequestDataOnSimObject](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_RequestDataOnSimObject.htm) | Request a one-shot or periodic sample for a particular object and data definition. | Core path | [917](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:917>) |
+| [SimConnect_RequestDataOnSimObjectType](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_RequestDataOnSimObjectType.htm) | Query nearby simulator objects by type and radius using a data definition. | Offline path | [918](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:918>) |
+| [SimConnect_SetDataOnSimObject](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_SetDataOnSimObject.htm) | Send values to writable fields or supported structures on a simulator object. | Core path | [919](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:919>) |
+
+## System notifications and client events
+
+Core supports standard and extended event reception using shared non-masking notification groups. Dialog-mode notification group requests remain pending. [Consumer API and example](05_CORE_AND_SIMCONNECT.md#client-event-reception)
+
+| Function | Purpose | Status | SDK declaration |
+|---|---|---|---|
+| [SimConnect_MapClientEventToSimEvent](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_MapClientEventToSimEvent.htm) | Associate a client event ID with a simulator or custom event name. | Core path | [907](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:907>) |
+| [SimConnect_TransmitClientEvent](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_TransmitClientEvent.htm) | Send a mapped event carrying one DWORD argument. | Core path | [908](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:908>) |
+| [SimConnect_TransmitClientEvent_EX1](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_TransmitClientEvent_EX1.htm) | Send a mapped event carrying up to five DWORD arguments. | Core path | [979](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:979>) |
+| [SimConnect_SubscribeToSystemEvent](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_SubscribeToSystemEvent.htm) | Subscribe to a named simulator notification. | Core path | [926](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:926>) |
+| [SimConnect_UnsubscribeFromSystemEvent](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_UnsubscribeFromSystemEvent.htm) | Remove a simulator notification subscription. | Core path | [927](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:927>) |
+| [SimConnect_SetSystemEventState](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_SetSystemEventState.htm) | Enable or suspend delivery of a subscribed system event. | Offline path | [909](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:909>) |
+| [SimConnect_AddClientEventToNotificationGroup](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_AddClientEventToNotificationGroup.htm) | Add a client event to a notification group, with optional masking. | Offline path | [910](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:910>) |
+| [SimConnect_RemoveClientEvent](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_RemoveClientEvent.htm) | Remove a client event from its notification group. | Offline path | [911](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:911>) |
+| [SimConnect_SetNotificationGroupPriority](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/General/SimConnect_SetNotificationGroupPriority.htm) | Set the order in which a notification group receives events. | Offline path | [912](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:912>) |
+| [SimConnect_ClearNotificationGroup](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_ClearNotificationGroup.htm) | Remove all client events from a notification group. | Offline path | [913](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:913>) |
+| [SimConnect_RequestNotificationGroup](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_RequestNotificationGroup.htm) | Request queued event notifications for a group in dialog mode. | Offline path | [914](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:914>) |
+
+## Aircraft Input Events
+
+| Function | Purpose | Status | SDK declaration |
+|---|---|---|---|
+| [SimConnect_EnumerateInputEvents](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/InputEvents/SimConnect_EnumerateInputEvents.htm) | Discover available aircraft Input Events and their hashes for the loaded aircraft. | Offline path | [990](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:990>) |
+| [SimConnect_EnumerateInputEventParams](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/InputEvents/SimConnect_EnumerateInputEventParams.htm) | Request parameter information for an aircraft Input Event hash. | Offline path | [995](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:995>) |
+| [SimConnect_GetInputEvent](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/InputEvents/SimConnect_GetInputEvent.htm) | Request the current value of an aircraft Input Event by hash. | Offline path | [991](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:991>) |
+| [SimConnect_SetInputEvent](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/InputEvents/SimConnect_SetInputEvent.htm) | Send a typed value buffer to an aircraft Input Event by hash. | Offline path | [992](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:992>) |
+| [SimConnect_SubscribeInputEvent](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/InputEvents/SimConnect_SubscribeInputEvent.htm) | Subscribe to value changes for an aircraft Input Event. | Offline path | [993](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:993>) |
+| [SimConnect_UnsubscribeInputEvent](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/InputEvents/SimConnect_UnsubscribeInputEvent.htm) | Stop value updates for an aircraft Input Event. | Offline path | [994](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:994>) |
+
+## Hardware input groups
+
+| Function | Purpose | Status | SDK declaration |
+|---|---|---|---|
+| [SimConnect_EnumerateControllers](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/InputEvents/SimConnect_EnumerateControllers.htm) | Enumerate devices connected to the simulator. | Offline path | [987](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:987>) |
+| [SimConnect_MapInputEventToClientEvent](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/InputEvents/SimConnect_MapInputEventToClientEvent.htm) | Map a keyboard, controller or mouse input to a client event. Microsoft directs developers to the EX1 replacement. | Deprecated | [920](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:920>) |
+| [SimConnect_MapInputEventToClientEvent_EX1](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/InputEvents/SimConnect_MapInputEventToClientEvent_EX1.htm) | Map device input to client events using the revised API. | Offline path | [988](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:988>) |
+| [SimConnect_SetInputGroupPriority](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_SetInputGroupPriority.htm) | Set the delivery priority of an input group. | Offline path | [921](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:921>) |
+| [SimConnect_RemoveInputEvent](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_RemoveInputEvent.htm) | Remove one input mapping from an input group. | Offline path | [922](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:922>) |
+| [SimConnect_ClearInputGroup](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_ClearInputGroup.htm) | Remove all input mappings from a group. | Offline path | [923](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:923>) |
+| [SimConnect_SetInputGroupState](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_SetInputGroupState.htm) | Enable or deactivate an input group. | Offline path | [924](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:924>) |
+| [SimConnect_RequestReservedKey](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_RequestReservedKey.htm) | Request a reserved keyboard binding using a list of candidate keys. | Experimental | [925](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:925>) |
+
+## Client Data
+
+The implemented API handles contiguous byte regions, one-shot and on-set reads, and tagged writes. See the [Consumer API guide](05_CORE_AND_SIMCONNECT.md#client-data) and the [offline verification](../reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_client_data_offline_2026-11-24/REPORT.md).
+
+| Function | Purpose | Status | SDK declaration |
+|---|---|---|---|
+| [SimConnect_MapClientDataNameToID](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_MapClientDataNameToID.htm) | Associate a named Client Data area with this client's numeric ID. | Offline path | [966](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:966>) |
+| [SimConnect_CreateClientData](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_CreateClientData.htm) | Create a named-area allocation after mapping its ID. | Offline path | [967](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:967>) |
+| [SimConnect_AddToClientDataDefinition](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_AddToClientDataDefinition.htm) | Describe a region of a Client Data area by offset, size or type. | Offline path | [968](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:968>) |
+| [SimConnect_ClearClientDataDefinition](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_ClearClientDataDefinition.htm) | Remove the fields in a Client Data definition. | Offline path | [969](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:969>) |
+| [SimConnect_RequestClientData](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_RequestClientData.htm) | Read or subscribe to data from a named area using a definition. | Offline path | [970](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:970>) |
+| [SimConnect_SetClientData](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_SetClientData.htm) | Send bytes to a named Client Data area where the area permits writes. | Offline path | [971](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:971>) |
+
+## Facilities and jetways
+
+Core exposes airport details with typed filters, worldwide and nearby airport lists, nearby navaid lists, typed navaid lookups, live jetway snapshots and shared nearby cache updates. The host can also choose the legacy additions-only SDK path. [Consumer API and examples](05_CORE_AND_SIMCONNECT.md#airport-detail-filters)
+
+| Function | Purpose | Status | SDK declaration |
+|---|---|---|---|
+| [SimConnect_SubscribeToFacilities](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_SubscribeToFacilities.htm) | Subscribe to facility cache additions for a facility type. | Offline path | [976](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:976>) |
+| [SimConnect_UnsubscribeToFacilities](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_UnsubscribeToFacilities.htm) | End a facility cache subscription for a facility type. | Offline path | [977](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:977>) |
+| [SimConnect_RequestFacilitiesList](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_RequestFacilitesList.htm) | Query a list of facilities of a selected type. Use the header spelling shown in this table. | Offline path | [978](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:978>) |
+| [SimConnect_SubscribeToFacilities_EX1](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_SubscribeToFacilities_EX1.htm) | Subscribe to facilities entering or leaving the cache using separate request IDs. | Offline path | [982](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:982>) |
+| [SimConnect_UnsubscribeToFacilities_EX1](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_UnsubscribeToFacilities_EX1.htm) | Stop either or both EX1 facility cache notifications. | Offline path | [983](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:983>) |
+| [SimConnect_RequestFacilitiesList_EX1](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_RequestFacilitiesList_EX1.htm) | Request the facilities in the relevant cache for the selected facility type. | Offline path | [984](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:984>) |
+| [SimConnect_AddToFacilityDefinition](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_AddToFacilityDefinition.htm) | Add a field or structural marker to a facility definition. | Offline path | [980](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:980>) |
+| [SimConnect_AddFacilityDataDefinitionFilter](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_AddFacilityDataDefinitionFilter.htm) | Apply a field-path filter to a facility data definition. | Offline path | [996](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:996>) |
+| [SimConnect_ClearAllFacilityDataDefinitionFilters](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_ClearAllFacilityDataDefinitionFilters.htm) | Remove filters from a facility definition. | Offline path | [997](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:997>) |
+| [SimConnect_RequestFacilityData](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_RequestFacilityData.htm) | Request detailed data for a facility using a definition and ICAO and optional region. | Offline path | [981](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:981>) |
+| [SimConnect_RequestFacilityData_EX1](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_RequestFacilityData_EX1.htm) | Request detailed data with an optional facility type as well as ICAO and region. | Offline path | [985](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:985>) |
+| [SimConnect_RequestJetwayData](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_RequestJetwayData.htm) | Request jetway data at an airport for selected indices. | Offline path | [986](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:986>) |
+
+## AI aircraft and simulated objects
+
+| Function | Purpose | Status | SDK declaration |
+|---|---|---|---|
+| [SimConnect_AICreateParkedATCAircraft](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/AI_Object/SimConnect_AICreateParkedATCAircraft.htm) | Create an ATC-controlled aircraft parked at an airport. | Offline path | [942](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:942>) |
+| [SimConnect_AICreateEnrouteATCAircraft](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/AI_Object/SimConnect_AICreateEnrouteATCAircraft.htm) | Create an ATC-controlled aircraft at a position along a flight plan. | Offline path | [943](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:943>) |
+| [SimConnect_AICreateNonATCAircraft](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/AI_Object/SimConnect_AICreateNonATCAircraft.htm) | Create an aircraft with an initial position and no ATC control. | Offline path | [944](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:944>) |
+| [SimConnect_AICreateSimulatedObject](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/AI_Object/SimConnect_AICreateSimulatedObject.htm) | Create a simulated object at a supplied initial position. | Offline path | [945](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:945>) |
+| [SimConnect_AIReleaseControl](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/AI_Object/SimConnect_AIReleaseControl.htm) | Release AI control of an object so the client can control it. | Offline path | [946](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:946>) |
+| [SimConnect_AIRemoveObject](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/AI_Object/SimConnect_AIRemoveObject.htm) | Request removal of a client-controlled object. | Offline path | [947](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:947>) |
+| [SimConnect_AISetAircraftFlightPlan](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/AI_Object/SimConnect_AISetAircraftFlightPlan.htm) | Assign a flight plan file to an AI aircraft. | Offline path | [948](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:948>) |
+
+## Flight files, camera and actions
+
+| Function | Purpose | Status | SDK declaration |
+|---|---|---|---|
+| [SimConnect_FlightLoad](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Flights/SimConnect_FlightLoad.htm) | Load a simulator flight file. | Offline path | [972](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:972>) |
+| [SimConnect_FlightSave](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Flights/SimConnect_FlightSave.htm) | Save current simulator flight state to a flight file. | Experimental | [973](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:973>) |
+| [SimConnect_FlightPlanLoad](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Flights/SimConnect_FlightPlanLoad.htm) | Load a simulator flight plan file. | Experimental | [974](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:974>) |
+| `SimConnect_CameraSetRelative6DOF` | Supply relative camera position and rotation. Runtime support is unverified. | Header only | [959](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:959>) |
+| [SimConnect_ExecuteAction](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/General/SimConnect_ExecuteAction.htm) | Call an XML-defined simulator action with a packed argument buffer. | Offline path | [989](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:989>) |
+| [SimConnect_ExecuteMissionAction](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to execute a mission action identified by GUID. | Deprecated | [949](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:949>) |
+| [SimConnect_CompleteCustomMissionAction](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to mark a custom mission action complete. | Deprecated | [950](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:950>) |
+
+## Deprecated weather, menu and text
+
+| Function | Purpose | Status | SDK declaration |
+|---|---|---|---|
+| [SimConnect_WeatherRequestInterpolatedObservation](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy interpolated weather observation request at a position. | Deprecated | [928](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:928>) |
+| [SimConnect_WeatherRequestObservationAtStation](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request for weather at a specified station. | Deprecated | [929](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:929>) |
+| [SimConnect_WeatherRequestObservationAtNearestStation](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request for weather at a station near a position. | Deprecated | [930](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:930>) |
+| [SimConnect_WeatherCreateStation](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to create a weather station. | Deprecated | [931](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:931>) |
+| [SimConnect_WeatherRemoveStation](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to remove a weather station. | Deprecated | [932](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:932>) |
+| [SimConnect_WeatherSetObservation](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to supply a METAR observation. | Deprecated | [933](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:933>) |
+| [SimConnect_WeatherSetModeServer](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to select server-supplied weather. | Deprecated | [934](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:934>) |
+| [SimConnect_WeatherSetModeTheme](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to switch to a weather theme. | Deprecated | [935](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:935>) |
+| [SimConnect_WeatherSetModeGlobal](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to switch to global weather mode. | Deprecated | [936](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:936>) |
+| [SimConnect_WeatherSetModeCustom](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to switch to custom weather mode. | Deprecated | [937](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:937>) |
+| [SimConnect_WeatherSetDynamicUpdateRate](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to alter the dynamic weather update rate. | Deprecated | [938](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:938>) |
+| [SimConnect_WeatherRequestCloudState](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy cloud-state request for a geographic volume. | Deprecated | [939](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:939>) |
+| [SimConnect_WeatherCreateThermal](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to create a thermal with specified properties. | Deprecated | [940](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:940>) |
+| [SimConnect_WeatherRemoveThermal](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to remove a thermal object. | Deprecated | [941](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:941>) |
+| [SimConnect_MenuAddItem](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to add a simulator menu item. | Deprecated | [960](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:960>) |
+| [SimConnect_MenuDeleteItem](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to remove a simulator menu item. | Deprecated | [961](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:961>) |
+| [SimConnect_MenuAddSubItem](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to add a simulator submenu item. | Deprecated | [962](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:962>) |
+| [SimConnect_MenuDeleteSubItem](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm) | Legacy request to remove a simulator submenu item. | Deprecated | [963](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:963>) |
+| [SimConnect_Text](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/General/SimConnect_Text.htm) | Legacy in-simulator text or menu display. Microsoft marks this unavailable in MSFS 2020. | Deprecated | [975](<C:/MSFS SDK/SimConnect SDK/include/SimConnect.h:975>) |
+
+## Reference discrepancies
+
+- The SDK declares and exports `SimConnect_RequestFacilitiesList`. The dedicated page uses the spelling `RequestFacilitesList`. The table uses the exact exported name. [Microsoft facility list page](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Facilities/SimConnect_RequestFacilitesList.htm)
+- `SimConnect_ExecuteAction` has a dedicated page even though the index omits it. `SimConnect_ExecuteMissionAction` is a separate deprecated function. [ExecuteAction reference](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/General/SimConnect_ExecuteAction.htm) · [MSFS 2020 API index](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_API_Reference.htm)
+- `SimConnect_CameraSetRelative6DOF` is declared and exported with no matching MSFS 2020 API reference entry found. Microsoft lists `SimConnect_SetSystemState` as unsupported. [System state packet reference](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Structures_And_Enumerations/SIMCONNECT_RECV_SYSTEM_STATE.htm)
+- `DispatchProc` is a callback type defined by the client. It is documented separately from the 91 callable exports. Core uses `SimConnect_GetNextDispatch`. [Callback reference](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/General/DispatchProc.htm)
+
+For deployment, account for every row with an implementation and verification status or a documented SDK limitation. Record the module-facing API operation where applicable and any simulator or aircraft prerequisites. Core-owned connection and dispatch functions support the shared session used by modules. Aircraft Input Events and Client Data are distinct groups with separate request, response and access requirements.
+
+The general SimVar and client event API reuses the current data definition, object data request and write, and event mapping and transmission functions. A module can call the documented scalar and fixed-width text SimVars and simulator events through Core without a starter catalog entry. [Consumer API and example](05_CORE_AND_SIMCONNECT.md#general-simvars-and-client-events)

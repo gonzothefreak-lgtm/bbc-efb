@@ -1,0 +1,1599 @@
+BBC INTEGRATED EFB — PROJECT DEVELOPMENT RECORD
+Historical main thread (old Project): ! Main thread workstation build
+Record version: 1.10
+Updated: 23 November 2026
+Status: MIGRATION FREEZE — approved design and validated-offline Core R3.1 candidate; NO complete EFB build.
+New build baseline: first owner-authorised build will be C0.1.
+Previous C0.1–C0.3 are archived OLD-PROJECT history, not current implementation.
+
+PURPOSE OF THIS DOCUMENT
+------------------------
+This is a durable handover/reference for future chats and development sessions.
+It records decisions, scope, working preferences, progress and open questions.
+It supplements the Project Master Prompt and the running CHANGELOG.md; it is
+not a replacement for the actual source code or build-by-build change log.
+
+1. HOW THE PROJECT STARTED AND EVOLVED
+--------------------------------------
+The initial idea was an electronic flight logbook for flight simulation and
+VATSIM. The scope grew into a standalone, integrated Windows Electronic Flight
+Bag (EFB) and pilot workstation, intended to reduce switching between multiple
+programs and browser windows during VATSIM operations. The logbook remains a
+major planned feature, but is now one of three top-level workspaces.
+
+The project owner is a real-world pilot, makes aviation/UX decisions and is
+learning software development. ChatGPT assists with architecture, research,
+interface design, code, troubleshooting and documentation. The project owner
+has final approval over design changes and when code/builds are executed.
+
+2. PRODUCT VISION AND DESIGN PRINCIPLES
+---------------------------------------
+- Windows 10/11 standalone desktop application, initially focused on VATSIM.
+- Professional, uncluttered, aviation-oriented interface.
+- Local-first, modular and maintainable; integrations are optional modules.
+- Reliable during flight, with clear connection states and graceful failures.
+- Configurable workspace: dock, resize, hide/reopen, move and eventually pop
+  panels into separate Windows windows for multiple monitors.
+- Avoid unsupported third-party embedding and respect API/licensing limits.
+- Design and test incrementally; preserve previous working builds.
+- Android companion support and home-cockpit/multi-PC ideas are long-term only.
+
+3. MAIN APPLICATION WORKSPACES — AGREED CONCEPT
+-----------------------------------------------
+A. DISPATCH
+   Preflight planning and preparation, including proposed SimBrief dispatch,
+   operational flight plan (OFP), weather and navigation resources.
+
+B. IN-FLIGHT
+   The main modular pilot workspace. Candidate panels include vPilot,
+   VATSIM radar, SimBrief OFP, weather, Hoppie ACARS/CPDLC and charts.
+   A Modules launcher is to remain visible on the RIGHT side of the window,
+   including while the window is resized. The centre workspace must adapt to
+   available width, not push the launcher off screen.
+
+C. LOGBOOK
+   Original core idea: eventual automatic flight logging, history,
+   statistics, flight times and possible landing-rate recording.
+
+Top-level Dispatch / In-Flight / Logbook navigation is used in current concepts.
+The final navigation placement is not permanently locked down.
+
+4. USER INTERFACE DECISIONS AND REFERENCES
+------------------------------------------
+- C0.1's large internal BBC Integrated EFB header/subtitle was disliked.
+- A slim, DARK, BORDERLESS window with custom top-right minimise,
+  maximise/restore and close controls was requested and approved.
+- The app name may appear discreetly at the top-left of the slim title bar.
+- The title bar should support dragging; resizing and Windows taskbar-safe
+  maximisation must be tested in practice.
+- In-Flight workspace should contain realistic example panels rather than
+  generic placeholder labels.
+- The owner supplied a screenshot of vPilot as a visual reference. The fake
+  vPilot panel should resemble its controls, COM radio indicators, controller
+  list, and messages/notes display. It is a VISUAL MOCK-UP, not actual vPilot.
+- A dark aviation-themed In-Flight mockup was generated and approved as a
+  concept direction. Do not treat an image as implemented software.
+- Initial panel layout is a tidy grid. Future planned interactions include
+  independent dragging, resizing, docking, floating and pop-out windows.
+- Right-side Modules launcher must stay anchored and accessible at all sizes.
+
+5. TECHNOLOGY AND BUILD WORKFLOW
+--------------------------------
+- Python is the preferred implementation language.
+- The owner chose a deliberately simple early approach: Python source files
+  plus a Windows .bat script to build a standalone EXE using PyInstaller.
+- Tkinter was used in the OLD project's concept builds. The new Project has
+  no selected UI framework or implementation baseline. Re-evaluate options
+  (including PySide6/Qt) before approving new development.
+- PySide6/Qt remains a candidate for later evaluation, especially if advanced
+  docking, window management and embedded content warrant it.
+- Preferred local storage: JSON, JSONL, TXT and CSV. Do not introduce SQLite
+  or mandatory cloud services without discussion/approval.
+- Keep source files, build scripts and a running change log together.
+
+6. HISTORICAL BUILD HISTORY — PREVIOUS PROJECT ONLY
+-------------------------------------------------------
+C0.1 — INITIAL CONCEPT
+  Implemented: Tkinter desktop shell, three navigation areas, placeholder
+  content, .bat/PyInstaller build workflow.
+  User reported: the concept ran successfully on their Windows PC.
+  Feedback: remove the large internal heading and clutter above navigation.
+
+C0.2 — BORDERLESS IN-FLIGHT CONCEPT
+  Implemented: dark borderless window, custom window controls, Dispatch /
+  In-Flight / Logbook pages, right Modules launcher and example In-Flight
+  panels (vPilot mock-up, VATSIM radar demo, SimBrief OFP, Weather, Hoppie).
+  User reported: 'i like it its working nice'.
+  Issue found by user: Modules launcher could disappear when the window was
+  resized because main content took too much horizontal space.
+
+C0.3 — MODULES SIDEBAR LAYOUT FIX
+  Implemented in source: right sidebar reserved first with a fixed width;
+  centre panel area uses remaining space. Existing concepts retained.
+  Added: running CHANGELOG.md covering C0.1–C0.3.
+  Python syntax was checked in the build preparation session.
+  Status: ZIP/source prepared; the user has NOT YET confirmed that C0.3
+  resolves the issue on their Windows PC. Do not claim it is verified.
+  Known limitations: panel content can clip in narrow windows; panels are not
+  independently draggable, dockable or resizable; no live integrations.
+
+Last prepared OLD-PROJECT package (archive only): BBC_Integrated_EFB_C0.3.zip
+OLD-PROJECT source folder/package contained main.py, build.bat, requirements.txt,
+README.txt and CHANGELOG.md. File names here are references, not a guarantee
+that a new chat has the files attached; consult the actual project source.
+
+7. SIMULATOR CONNECTIVITY — PLANNED, NOT IMPLEMENTED
+---------------------------------------------------
+- The owner currently flies MSFS 2020; start development and testing there.
+- The design must also accommodate MSFS 2024, with compatibility tested
+  separately rather than assumed.
+- SimConnect is the preferred primary simulator interface candidate.
+- FSUIPC is an optional secondary/alternative interface candidate; investigate
+  version support, licensing and practical connection methods.
+- Proposed Simulator Connection Manager isolates simulator-specific adapters
+  from the rest of the EFB.
+- Proposed future data: position, altitude, speed, heading, flight state,
+  takeoff/landing events, flight-time tracking and logbook data. Landing rate
+  and aircraft-specific variables may need special handling or calculations.
+- Show simulator connection status in the interface.
+- No SimConnect or FSUIPC implementation has been verified in C0.1–C0.3.
+
+8. THIRD-PARTY INTEGRATIONS — RESEARCH/PLANNING ONLY
+---------------------------------------------------
+Candidate modules/services include SimBrief, VATSIM radar/ATC information,
+vPilot, Hoppie ACARS/CPDLC, Active Sky weather, navigation/charts resources,
+and potentially aircraft-specific data from add-ons such as PMDG and Fenix.
+
+- Prefer official documented APIs, SDKs and permitted integration methods.
+- vPilot: user is interested in integrating the real application visually,
+  but reparenting/embedding another Windows app is experimental and deferred.
+  A vPilot LOOKALIKE in the historical concept builds did not communicate with vPilot.
+- VATSIM radar in C0.2/C0.3 is a demo drawing, not a live radar/map.
+- Historical Hoppie, SimBrief and Weather panels displayed sample/mock data.
+- Research capability, authentication, licensing, redistribution and support
+  before promising live integrations.
+
+9. APPROVED DEVELOPMENT PROCESS AND COMMUNICATION RULES
+--------------------------------------------------------
+CRITICAL: DO NOT create or modify source code, execute a build, or produce a
+new code ZIP unless the owner EXPLICITLY ASKS for a new build/development
+execution. Discussion, requirements and design do not count as authorisation.
+
+- The owner already knows how to extract the ZIP and run build.bat. Do not
+  repeat installation instructions unless requested.
+- Discuss proposed changes first and distinguish proposed vs implemented.
+- Keep a RUNNING CHANGELOG for each authorised build, with features, fixes,
+  known issues and test status. Preserve prior working versions.
+- The NEW project restarts at C0.1 (only once authorised); later Alpha,
+  Beta and Release. Do not call mock-ups production-ready.
+- Keep replies clear, conversational and reasonably concise; avoid dumping
+  unnecessary detail or making unilateral architecture decisions.
+- Do not call the owner 'Captain'. The owner prefers casual, blue-collar
+  humour and a practical collaborative style.
+- The OLD project's main development chat was named:
+  '! Main thread workstation build'. New Project chat titles are not yet recorded.
+- Other project chats may be used for UI design, integration research and
+  brainstorming; approved decisions should be brought into the main thread.
+
+10. NEXT OPEN ITEMS / POSSIBLE FUTURE WORK
+------------------------------------------
+- Historical C0.3 sidebar fix was not Windows-verified. Carry forward the
+  requirement that the right Modules launcher remain visible while resizing,
+  maximising and restoring; do not treat the old build as current source.
+- Evaluate behaviour at narrow window widths and whether minimum size needs
+  adjustment; current content may clip.
+- Discuss (do not automatically implement) draggable/resizable/dockable panels
+  and optional pop-out windows for multi-monitor layouts.
+- Reassess Tkinter vs PySide6/Qt before major docking complexity.
+- Plan initial SimConnect read-only connection test against MSFS 2020, then
+  separately test MSFS 2024 compatibility.
+- Plan logbook data model, storage layout, flight-phase/event detection and
+  eventual settings/diagnostics modules.
+- Continue research into official third-party integration possibilities.
+
+11. SOURCE EVIDENCE AND DOCUMENT GOVERNANCE
+-------------------------------------------------
+For the NEW project, the authoritative current document versions are the
+individual files in Project > Sources, subject to the Project instructions.
+Use them together with the owner's direct approvals. The old Library and old
+Project contain historical references only. If conflicts arise, do not silently
+merge or override decisions: flag them for owner review.
+
+When application development is later authorised, actual current-project
+source files and genuine test evidence determine what is IMPLEMENTED and
+TESTED; design records alone do not establish working functionality.
+
+When a new decision is approved, prepare a COMPLETE replacement TXT file
+based on the current Project Source version and provide it to the owner.
+The owner manually replaces the old Source attachment and confirms success.
+Do not claim a revised document is active before replacement is confirmed.
+When a new build is explicitly authorised, start a NEW-project CHANGELOG.md
+at C0.1; do not import historical build numbering as current progress.
+Never silently turn a proposal into an implemented or tested feature.
+
+END OF ORIGINAL DEVELOPMENT HISTORY (v1.0) — LATER ADDENDA FOLLOW
+
+12. SIMCONNECT RESEARCH HANDOFF AND UI DECISIONS — 17 NOVEMBER 2026
+------------------------------------------------------------------
+Status: Design approved by project owner; NOT implemented or tested.
+
+SimConnect research is handled in a dedicated project chat. Its 15 agreed
+requirements include: local connection first with future network provision;
+configurable automatic/manual connection; demand-driven shared telemetry;
+continued logging while minimised; read-only operation; automatic reconnect
+in auto mode; pause-aware timing; aircraft auto-detection with manual override;
+optional isolated aircraft plugins; offline EFB functionality; Settings
+connection diagnostics; live/stale/unavailable data indication; rotated local
+logs; persisted settings; clean shutdown and flight-log preservation.
+MSFS 2020 is the initial target; MSFS 2024 compatibility remains unverified.
+These are design requirements, not working functionality. Detailed research
+records from this handoff are now maintained as current Project Sources:
+- BBC_EFB_SimConnect_Integration_Development_Record.txt
+- BBC_EFB_Aircraft_Plugin_Development_Framework.txt
+- BBC_EFB_SimConnect_Data_Requirements_Register.txt
+
+Approved main-UI additions:
+A. Add an optional Aircraft Status panel to the In-Flight workspace's Modules
+   launcher, showing available aircraft identity, altitude, groundspeed,
+   heading, vertical speed, flight phase and flight-logging status. Clearly
+   mark live, stale or unavailable telemetry. Fields and exact layout remain
+   subject to further design and SimConnect variable feasibility research.
+B. Add a permanent, compact SimConnect connection indicator on the VERY BOTTOM
+   of the application, visible on Dispatch, In-Flight and Logbook, including
+   at resized window sizes. Proposed label: 'SimConnect: Connected', with
+   corresponding Connecting, Disconnected, Reconnecting and Error states.
+   Include a clear visual status icon/colour and optionally simulator name.
+   Exact appearance and interactions remain subject to UI review.
+C. Send actual simulator-data requirements from each planned EFB module to
+   the dedicated SimConnect chat for its Data Requirements Register.
+
+No source code or build was authorised by these UI design approvals.
+
+13. SIMULATOR PERFORMANCE AND LIGHTWEIGHT OPERATION — 17 NOVEMBER 2026
+---------------------------------------------------------------------
+Status: Project owner-approved design priority; not implemented or benchmarked.
+
+Core principle: The simulator receives resource priority. The EFB should
+consume only the resources needed to deliver its active functions.
+
+Design requirements:
+- Use demand-driven SimConnect subscriptions and share telemetry among
+  consumers; avoid redundant or unnecessarily frequent polling.
+- Keep UI redraws, animations, background rendering and GPU use modest.
+- When minimised, reduce visual work while continuing essential background
+  services such as flight logging.
+- Inactive optional modules should not consume substantial resources.
+- Bound telemetry buffers, diagnostic histories and caches.
+- Monitor CPU, RAM, GPU, telemetry traffic, simulator FPS and frame times;
+  test for spikes and stutters as well as averages.
+- Add a Performance Diagnostics area under Settings (UI design proposal,
+  details to be reviewed).
+
+Provisional performance goals, subject to representative Windows/MSFS testing:
+  Idle EFB CPU: under 1% on reference test PC.
+  Normal EFB CPU: under 3% average on reference test PC.
+  RAM: under 300 MB initially.
+  Minimized: as close to idle CPU activity as practical.
+  Simulator: no consistently measurable FPS/frame-time degradation.
+These are engineering targets, NOT guarantees, benchmarks or acceptance
+results. Reference hardware, test methodology and thresholds require review.
+Reliability and flight-log integrity take priority over arbitrary limits.
+
+Cross-chat handoff: Dedicated SimConnect research chat should assess
+subscription cadence, shared data distribution, idle/minimised behaviour,
+reconnect cost, diagnostics and telemetry overhead. No SimConnect technical
+design has been changed here without that workstream's review.
+
+Also approved: bottom SimConnect indicator should be clickable to open
+Settings > SimConnect > Connection Diagnostics; hover should show connection
+status, simulator identity and data freshness when available.
+
+No application source changes or new builds authorised by these decisions.
+
+
+14. ON-DEMAND PROJECT CATCH-UP COMMAND — 17 NOVEMBER 2026
+---------------------------------------------------------
+Status: Approved cross-chat coordination workflow; documentation only.
+Standard user phrase: "catch up on project".
+
+Any BBC EFB specialist chat receiving this instruction should retrieve the
+current Project instructions and current Project > Sources, including the
+Project Development Record, Development Chat Register and relevant specialist
+sources; discover newly added Sources beyond the initial static list. Compare documented
+approved decisions and workstream handoffs against existing chat context,
+then return a dated concise summary of what changed, what affects that
+workstream, pending actions and any conflicts requiring clarification.
+Use accessible prior conversations as supplementary context, not as a
+promised complete or real-time feed. If access or freshness is uncertain,
+state the gap. Approved/planned/implemented/tested remain separate statuses.
+
+The command updates the chat's working understanding; it is not an order to
+write application code, modify builds, or overwrite unrelated workstreams'
+documents. Master document revisions require preparing a full replacement,
+owner review and manual Project Source replacement with confirmation. See the
+STANDARD CROSS-CHAT SYNCHRONISATION COMMAND section in
+BBC_EFB_Development_Chat_Register.txt for the complete procedure.
+
+To enable reliable recognition in any newly created project chat, include
+this trigger and protocol in the Project Instructions or its startup prompt.
+Project Source documents alone are not guaranteed to be loaded in every
+chat, and there is no automatic live cross-chat synchronisation.
+
+15. NEW PROJECT MIGRATION / SINGLE SOURCE OF TRUTH — 17 NOVEMBER 2026
+-------------------------------------------------------------------
+Project: BBC Integrated workstation and EFB for VATSIM
+Status: Approved project-document governance and fresh application baseline.
+
+AUTHORITATIVE DOCUMENT LOCATION
+- Project > Sources in the NEW ChatGPT Project is the sole designated master
+  location for current project documentation and approved design records.
+- Older Library copies, previous Project attachments, chat drafts and prior
+  ZIP archives are NON-AUTHORITATIVE history unless the owner explicitly
+  designates a specific replacement.
+- The original VATSIM Project Master Prompt is retained unchanged as a
+  historical founding reference; new Project Instructions and current owner
+  decisions govern where an old statement is superseded.
+- The owner has reported uploading six initial master documents to the new
+  Project Sources. This chat cannot directly verify those other-Project
+  attachments; replacement is confirmed by the owner in that Project.
+
+DOCUMENT UPDATE WORKFLOW
+1. Read the current version from the NEW Project's Sources, not an old Library
+   counterpart; locate any additional newly added source documents.
+2. Preserve all approved content unless a change is explicitly authorised.
+3. Prepare a complete TXT replacement with unchanged filename, revision/date
+   and concise change log. Provide to the project owner for review.
+4. The owner manually removes/replaces the old attachment in Project Sources,
+   retaining one active copy; keep backups outside the active Sources list.
+5. Treat the replacement as authoritative ONLY after its upload is confirmed.
+   Never claim a protected Project attachment was updated in place.
+6. The phrase "catch up on project" requests an on-demand, read-only review
+   of current Project Sources and relevant workstreams, not code or builds.
+
+APPLICATION BASELINE RESET
+- Former C0.1, C0.2 and C0.3 are old-project historical concept builds only.
+- New Project: no application source or implemented functionality inherited.
+- First future owner-authorised build in NEW Project will be C0.1.
+- Evaluate final UI framework before coding; Python remains preferred.
+- Retain approved workflow, interface, performance and SimConnect design goals.
+- Do not imply the new C0.1 has been built or tested.
+
+16. COMPLETE EFB SHELL IN EVERY BUILD / INITIAL C0.1 DIRECTION — 18 NOVEMBER 2026
+--------------------------------------------------------------------------------
+Status: OWNER-APPROVED release/design principle; C0.1 feature specifics remain
+in planning. Neither application code nor a build has been authorised.
+
+EVERY BUILD IS THE COMPLETE EFB, NOT A STANDALONE FEATURE DEMO
+- Every NEW-Project application build must contain the established, integrated
+  EFB application shell and all three top-level workspaces: Dispatch,
+  In-Flight and Logbook. Provide access to Settings and the approved permanent
+  bottom SimConnect status indicator in the overall interface design.
+- It is acceptable for individual modules, panels and integrations to be
+  non-functional in early builds. Use clearly identified, realistic
+  placeholders or examples where functionality has not been implemented.
+  Sample flight, radar, communications or weather information must never be
+  presented as live operational data.
+- Preserve the approved dark, slim, borderless UI direction. The In-Flight
+  right-side Modules launcher remains accessible when the window is resized.
+  Final responsive behaviour, minimum sizes and docking require design and
+  Windows verification.
+- "Complete EFB" means its agreed overall shell/workspaces are present; it
+  does NOT mean every future integration or feature must be functional.
+
+FIRST NEW-PROJECT BUILD: C0.1 — OWNER-STATED INTENDED FUNCTIONAL FOCUS
+- The owner's intended first functional feature is the Logbook using live
+  MSFS 2020 SimConnect telemetry, within the complete EFB shell above.
+- Dispatch and In-Flight may initially use clearly labelled placeholders.
+- The exact Logbook recording workflow (automatic/manual/hybrid), persisted
+  fields, event detection, completeness, recovery tests, implementation
+  sequencing and C0.1 acceptance criteria have NOT yet been approved.
+- SimConnect integration method, UI toolkit and packaging remain to be
+  evaluated with the relevant workstreams before implementation.
+- This records the intended milestone and product direction; it is NOT an
+  instruction to write code, compile an EXE or claim a working Logbook.
+
+17. CLEAN DEVELOPMENT / COMPLETE RELEASE / PERFORMANCE REGRESSION POLICY
+----------------------------------------------------------------------
+Status: OWNER-APPROVED project-wide development and release policy, recorded
+18 November 2026. Implementation, automated checks and benchmarks do not yet
+exist. This supplements sections 5, 9, 11 and 13 without replacing them.
+
+PURPOSE
+Avoid accumulated ad-hoc patches, redundant services, brittle code and
+resource-intensive integrations as additional EFB functions are developed.
+Each version should remain one coherent, modular and maintainable application.
+
+MANDATORY DEVELOPMENT PRACTICES FOR FUTURE AUTHORISED BUILDS
+1. Before changes, review the WHOLE current-project source structure,
+   dependencies, interaction boundaries, existing functionality, diagnostics
+   and performance implications of the proposed features.
+2. Design new features into appropriate existing modules or refactor affected
+   modules. Do not keep stacking workarounds, duplicate services, dead code,
+   obsolete alternate implementations or one-off patches over previous fixes.
+3. Reuse well-designed, verified components where sensible. "Fresh build"
+   means fully reviewed, coherent source and CLEANLY regenerated build output,
+   NOT gratuitously rewriting every functioning module from zero. If current
+   architecture is unsuitable, propose a deliberate refactor for approval.
+4. Deliver a COMPLETE, independently buildable source set for the ENTIRE EFB
+   for each release, with clear dependency versions, build procedure and
+   build/version identity; no partial snippets, accumulated patch instructions
+   or dependence on earlier release ZIPs to reconstruct the current version.
+5. Build each release from a clean build/output directory, not from stale
+   compiled artefacts. Archive previous working releases for rollback.
+6. Maintain a new-project CHANGELOG from authorised C0.1 onwards: changed
+   components, approved functionality, fixes, refactors, known limitations,
+   measured results and actual test status. Do not import the old project's
+   C0.1-C0.3 release history as current implementation.
+7. Review maintainability before delivery: clear module responsibilities,
+   limited coupling, shared services, failure isolation, bounded workers,
+   safe shutdown, sensible logging, no unnecessary dependencies, and no
+   disabled/placeholder module pretending to operate.
+8. Regression-test previously working functions when new functions are added.
+   Record which automated or manual tests actually ran, on which environment;
+   anything untested must be clearly identified. A clean rebuild alone does
+   not demonstrate clean architecture, correctness or performance.
+9. Any major architectural change requires discussion and owner approval.
+   No application coding or builds proceed without explicit authorisation.
+
+PERFORMANCE REGRESSION STANDARD — SIMULATOR RECEIVES PRIORITY
+- New functionality must be assessed for idle and flight CPU/RAM/GPU cost,
+  UI responsiveness, SimConnect traffic, disk/logging overhead, simulator FPS
+  and especially frame-time spikes or stutters. Do not assume that adding
+  features is allowed to degrade simulator performance unchecked.
+- Share demand-driven telemetry subscriptions. Do not create redundant
+  SimConnect connections/polling loops or refresh inactive visual modules
+  unnecessarily. When minimised, reduce visual workload but maintain any
+  essential active logging/background consumers.
+- Use bounded queues, data buffers, caches, logs, retries and diagnostic
+  history. Prevent low-priority diagnostic/render work from delaying reliable
+  flight-log recording, cleanup or simulator operation.
+- Establish a reproducible simulator-only reference, then compare each new
+  release with the preceding verified release under representative, comparable
+  MSFS 2020 scenarios and the same reference PC/settings when possible.
+  Record CPU/RAM/GPU, overall FPS, frame-time distributions/spikes and test
+  conditions. Separately verify MSFS 2024 when its support is attempted.
+- Investigate unexplained performance regressions before declaring release
+  readiness. Where real Windows/MSFS measurements cannot be run, record the
+  gap as NOT TESTED rather than claiming targets were achieved.
+- Section 13's provisional project-wide goals remain UNDER 1% idle CPU,
+  UNDER 3% average normal CPU, UNDER 300 MB RAM, and no consistently
+  measurable simulator FPS/frame-time degradation. Hardware/test thresholds
+  have not been established; these are NOT guarantees or achieved results.
+- Safety, reliable operation and flight-log integrity take precedence over
+  arbitrary numerical targets. Baselines and pass/fail criteria need separate
+  owner review before being enforced as release gates.
+
+CROSS-CHAT COORDINATION
+- Main Development Chat owns whole-application architecture, the release
+  quality standard and integration of approved changes.
+- SimConnect Integration Chat owns the technical feasibility, telemetry
+  cadence, shared subscriptions, connection/diagnostics and simulator-impact
+  evidence for its subsystem; this policy does not change its approved design.
+- Logbook Page Dev, owner-confirmed ACTIVE 20 November 2026, owns Logbook
+  workflows, page design, record requirements and storage proposals,
+  coordinated through Main and SimConnect Integration Chat.
+- Every workstream is responsible for controlling CPU, RAM, GPU, disk,
+  background work and simulator FPS/frame-time impact WITHIN ITS OWN SCOPE.
+  Main coordinates application-level performance and release regression tests;
+  SimConnect owns telemetry overhead; Logbook owns recording/persistence cost.
+- Workstream proposals or future build requirements must be handed off and
+  documented in current Project Sources before they are treated as approved.
+
+18. LOGBOOK PAGE DEV WORKSTREAM — PROPOSED 18 / ACTIVE 20 NOVEMBER 2026
+------------------------------------------------------------------------
+Status: Owner-confirmed ACTIVE specialist design chat on 20 November 2026.
+- Confirmed name: "Logbook Page Dev" in the current NEW ChatGPT Project.
+- Ownership: Logbook UI/layout, flight list and details, automatic
+  and manual recording workflow design, event/timing requirements, storage,
+  integrity/recovery, filtering, statistics and exports.
+- Handoff to SimConnect: which data and events are required, why, data age,
+  acceptable sampling cadence, active/background consumers, disconnection,
+  pause handling and MSFS version/aircraft feasibility. Do not invent
+  validated telemetry mappings or duplicate SimConnect ownership.
+- Handoff to Main Development: shared UI shell, navigation, configuration,
+  persistent storage conventions, integration contracts and C0.1 milestone.
+- The owner confirmed the chat's creation on 20 November 2026. Its
+  ACTIVE status, scope and handoffs are recorded in the current Chat Register.
+- Its initial catch-up proposed a history-first layout with compact live-flight
+  area and a preliminary telemetry-investigation handoff. Neither proposal has
+  been approved as a C0.1 specification; the telemetry handoff is not yet
+  formally submitted to SimConnect Integration Chat.
+- The six established masters remain in use. A dedicated Logbook Development
+  Record may be proposed later; do not create a duplicate master by default.
+
+19. PROJECT CHAT ROUTING / MAIN COORDINATION RULE — 18 NOVEMBER 2026
+-------------------------------------------------------------------
+Status: OWNER-APPROVED project-wide conversation coordination policy.
+Applies to all existing and future specialist development chats in the
+current ChatGPT Project; this does not grant direct access to other chats.
+
+- The Main Development Chat is the central coordinator for whole-application
+  architecture, UI shell, development standards, release planning, dependency
+  resolution, cross-workstream decisions and chat/workstream governance.
+- Every chat should check whether a substantive new topic falls within its
+  responsibilities in the current Development Chat Register.
+- When the owner raises a substantive out-of-scope topic in a specialist chat,
+  gently identify the correct ACTIVE specialist chat and recommend continuing
+  there. For cross-cutting, ambiguous, unassigned or project-wide matters,
+  route to the Main Development Chat. If a relevant chat is only PLANNED,
+  route to Main until its creation is owner-confirmed.
+- Avoid extended design or unapproved architecture changes in the wrong
+  workstream. A quick related answer or clarification is fine, and the
+  "catch up on project" command is still handled by whichever chat receives
+  it; significant work and approvals belong to the owning workstream.
+- Provide a concise, copy-ready handoff stating the relevant idea, current
+  agreed constraints, destination chat, questions and status, so the owner
+  need not re-explain context. Do not claim that chats were automatically
+  switched, messaged or synchronised.
+- Keep redirects friendly, brief and nonjudgmental; the purpose is preventing
+  confused ownership and documentation drift, not interrupting casual chat.
+  If the owner explicitly chooses to discuss a subject elsewhere, still flag
+  the owning workstream and prepare the appropriate handoff before treating
+  any design decision as project-wide.
+- This rule does not authorise new application code, a build, Source edits
+  or unilateral technical decisions.
+- To make the rule visible even to newly created chats, add a concise version
+  to the shared Project Instructions as well as the Development Chat Register.
+  Source revisions take effect only after owner replacement/confirmation.
+
+20. BLACK BOX CORE / FLIGHT RECORDER / FUTURE NETWORK ARCHITECTURE — 22 NOVEMBER 2026
+-------------------------------------------------------------------------------------
+Status: Approved HIGH-LEVEL architectural direction from the Main Development
+Chat, plus explicitly identified owner-directed PROPOSALS from the separate
+22 November handoff. Not a technology selection, interface specification,
+implementation plan approval, source-code authorisation or test result.
+
+ORIGIN AND DESIGN INTENT
+- The project owner identifies Black Box Core (BBC) as the overall EFB's
+  central SHARED INFORMATION SYSTEM, with a recognisable Black Box Flight
+  Recorder as a DISTINCT consumer/component. The name also reflects The
+  Black Box Club. It does not rename the overall EFB product.
+- Both are logical responsibilities: they need not be separate executables,
+  Windows services, processes, servers or mandatory background workers.
+- Black Box Core should expose documented, stable, versioned access contracts
+  to the EFB and future authorised consumers. Internal Core improvements
+  should not require updates to unaffected consumers while compatibility is
+  preserved. Versioning alone does not make independent binary upgrades safe
+  or feasible; packaging and compatibility need separate research.
+- The Core can coordinate supported simulator, VATSIM and future integration
+  data through modular source-specific services/adapters. It must NOT become
+  a monolithic recorder, unbounded broker or a second competing SimConnect
+  connection/distribution manager.
+
+APPROVED BOUNDARIES / EXISTING REQUIREMENTS PRESERVED
+- SimConnect Integration continues to own the simulator-facing connection,
+  shared demand-driven subscriptions, telemetry freshness and recovery. It
+  fits WITHIN a wider Black Box Core concept; Microsoft's SimConnect name
+  and established technical decisions Q1–Q15 remain unchanged.
+- Black Box Flight Recorder consumes required data from Core interfaces,
+  owns recording state/flight-event and record-lifecycle responsibilities,
+  persistence/recovery, and supplies live recording status to In-Flight and
+  saved flight records to Logbook. Detailed recording requirements remain
+  owned by Logbook Page Dev and are NOT yet approved for C0.1.
+- In-Flight and other modules may consume shared live data WITHOUT passing
+  through the Flight Recorder. A recorder failure must not unnecessarily
+  interrupt telemetry distribution or unrelated EFB modules. A source
+  failure must not corrupt or falsely continue recorded data.
+- Differentiate SIMULATOR CONNECTION state from FLIGHT RECORDING state.
+  Data contracts should distinguish actual source observations from
+  derived states/events and stored records, including source/provenance,
+  units, timestamps, data-age/quality and missing/stale/unavailable values.
+- Independent optional source failures must not prevent offline-capable
+  EFB features from operating. Network distribution must not be required
+  for same-computer Logbook recording.
+
+LOCAL COMMUNICATIONS AND NETWORKING — APPROVED INTENT, MECHANISM UNDECIDED
+- Core is the intended architectural owner of FUTURE optional shared-data
+  network hosting, client-facing subscriptions and related permissions.
+  Home cockpits, other PCs, companion tools and external applications are
+  FUTURE possibilities, not authorised C0.1 features.
+- The C0.1 direction remains LOCAL-FIRST on one Windows PC. EFB UI and Core
+  require an internal communication/data contract; this could be in-process.
+  A separate Core process, native Windows IPC or a localhost/loopback-only
+  listener are research OPTIONS, NOT mandatory C0.1 requirements.
+- If a separate local transport is later selected, study least privilege,
+  local authentication/authorisation where needed, input validation and
+  protection of the trust boundary. Loopback binding alone is not proof
+  of security. Neither a public listener, inbound internet access, default
+  LAN listener, remote administration, automatic router port forwarding nor
+  UPnP should be part of initial operation.
+- These inbound-service restrictions do NOT prohibit appropriately
+  supported outbound requests to VATSIM, SimBrief, weather or other
+  approved optional data providers.
+- Future LAN/remote hosting should be disabled by default unless separately
+  approved, and requires threat modelling, device pairing/discovery,
+  authentication, authorisation, transport protection, opt-in, firewall and
+  network-exposure review, credentials, maintenance and security testing.
+  Do not choose protocol, host location or process model prematurely.
+
+SECURITY, USER EXPERIENCE AND HARDWARE — OWNER-DIRECTED DESIGN PROPOSALS
+- Security is a cross-project quality concern. Evaluate secure defaults,
+  least privileges, validated inputs/messages, confidential token storage,
+  plugin trust boundaries, secret-safe logging, safe dependency/update
+  processes and proportionate failure handling. Do not claim that an
+  in-process plugin or local IPC offers complete sandboxing/security.
+- Essential security must not depend on whether a user purchases optional
+  functionality; a future pricing model is NOT approved.
+- Prefer beginner-friendly local use: sensible automatic connection defaults,
+  useful status/error messages, minimal compulsory configuration and
+  advanced settings only when required. Future simulator/aircraft/hardware
+  auto-detection is a feasibility objective, not a verified capability.
+- Hardware interfaces, networked cockpits, remote clients and other apps
+  remain planned/research-only; no third-party host/SDK/API is implemented.
+- Illustrative AUD $5 one-time payment for possible future networking was
+  merely discussed in the separate handoff: NOT an approved price, licensing
+  model, paywall, billing requirement or milestone. No commerce components.
+
+PERFORMANCE / SCOPE / APPROVAL GUARDRAILS
+- The simulator remains first priority. Reuse the approved centrally managed,
+  demand-driven SimConnect subscriptions and bounded distribution; avoid
+  duplicate polling, listeners, workers, caches and disk activity. Essential
+  logging persists while minimised; visual-only work can be suspended.
+- Quantitative CPU/RAM/FPS/frame-time limits remain provisional. Security,
+  reliability and flight-log integrity take precedence over arbitrary values.
+- The FIRST future authorised C0.1 still targets the COMPLETE Dispatch,
+  In-Flight, Logbook and Settings EFB shell with a working Logbook based on
+  local, read-only MSFS 2020 SimConnect. No external network server, multi-PC
+  client or third-party app gateway is included by this architecture approval.
+- Framework, SimConnect library, data schemas, threading, IPC, plugin loader,
+  future network protocol/deployment, threat controls, tests, C0.1 recording
+  rules and acceptance criteria remain subject to specialist research and
+  explicit project-owner approval. No implementation or tests exist.
+
+CHAT OWNERSHIP / RENAME STATUS
+- On 22 November 2026 the owner explicitly DIRECTED that the existing active
+  'SimConnect Integration Chat' be renamed 'Black Box Core Dev', and that its
+  charter expand to include Black Box Core subsystem research and technical
+  coordination. This is a change to an EXISTING specialist chat, not a fourth
+  workstream or a new product name. The actual UI rename is performed and
+  confirmed by the owner; this document does not assert it was already done.
+- References in earlier historical sections to 'SimConnect Integration Chat'
+  refer to the SAME continuing workstream, now designated Black Box Core Dev.
+  Do not rewrite historical entries or Microsoft's 'SimConnect' terminology.
+- Main Development Chat retains ownership of whole-EFB architecture, shared
+  contract approval, cross-workstream dependencies, network-hosting policy,
+  UI shell and release readiness. Black Box Core Dev owns technical research
+  and proposals concerning simulator connectivity and Core provider services,
+  telemetry distribution, future local/network transport feasibility,
+  diagnostics, aircraft adapters, reliability, security and performance
+  WITHIN ITS SCOPE. Technical decisions crossing workstreams need Main and
+  owner review. No new default Core network service is authorised.
+- Logbook Page Dev continues to own Black Box Flight Recorder workflows,
+  recording/event definitions, flight records, UI and persistence/recovery
+  requirements. The Core specialist must not absorb recorder ownership.
+- Existing SimConnect Integration Record v0.4, Data Requirements Register
+  v0.2 and Aircraft Plugin Framework v0.3 remain the authoritative technical
+  sources under their EXISTING filenames, pending specialist-led reviewed
+  revisions. Their established decisions remain unchanged.
+
+OPEN FOR EXPLICIT REVIEW
+1. Owner to rename the SAME existing conversation 'Black Box Core Dev' and
+   paste the revised scope handoff there; confirm completion in Main.
+2. Agree the minimum internal Core-to-consumer contract for C0.1 after the
+   Logbook team specifies actual data and recording requirements.
+3. Research whether any process boundary/IPC is needed; do not equate a
+   separate logical subsystem with a mandatory local server.
+4. Distinguish future LAN SimConnect CLIENT connections from optional Core
+   HOST services supplying EFB data to other PCs; confirm trust/security.
+5. Research aircraft/hardware auto-detection, external client APIs and
+   optional paid networking only with separately approved future use cases.
+No code/build, simulator tests, network listener, payment system or Project
+Source replacement authorised by this documentation proposal.
+
+REVISION HISTORY
+2026-11-17 — v1.1: Project Sources governance and fresh C0.1 baseline;
+old build/chat references clarified. No application source changed.
+
+2026-11-18 — v1.2: Added owner-approved complete-EFB-per-build requirement;
+clean, complete release policy and explicit cross-build performance
+regression review; recorded C0.1 functional Logbook/SimConnect intent
+as planning and Logbook Page Dev as a proposed specialist workstream.
+All previous decisions retained. Added owner-approved Main Chat routing
+and specialist-chat redirection standard (section 19); pending inclusion in
+shared Project Instructions. Documentation only; no code/build.
+
+2026-11-20 — v1.3: Confirmed Logbook Page Dev as third active research/design
+chat, coordinated the Chat Register v1.4 revision, and clarified
+that simulator performance is every workstream's responsibility within its
+scope. Preserved the approved C0.1 direction, clean-build policy, SimConnect
+constraints, historical project record and unapproved status of Logbook layout
+and telemetry candidates. Documentation only; no app code/build/test.
+
+2026-11-22 — v1.4 (REPLACEMENT FOR OWNER REVIEW): Reconciled the owner-led
+Black Box Core handoff and approved high-level Core/Recorder boundaries;
+documented future optional networking, stable contracts, security objectives
+and single-computer C0.1 boundaries. Owner directed renaming the existing
+SimConnect Integration Chat to Black Box Core Dev; actual UI rename awaits
+owner action/confirmation. Preserved Q1–Q15, clean-build and performance
+policies, other workstream ownership and all earlier history. No code/build/test.
+
+
+21. OWNER-APPROVED CORE MODULARITY AND DEFERRED MODULE DEPLOYMENT — 22 NOVEMBER 2026
+-------------------------------------------------------------------------------------
+Status: OWNER-APPROVED design principles recorded during Black Box Core Dev
+conversation; specific protocols, schemas, packaging and implementation are
+NOT approved, implemented or tested. This clarifies and supplements section
+20 without changing the simulator requirements or workstream boundaries.
+
+FOUR APPROVED DESIGN PRINCIPLES
+1. SERVICE-LIKE BLACK BOX CORE: Design Black Box Core as a logically
+   independent central shared-information service/subsystem, with clear
+   responsibilities, lifecycle and interfaces. "Service-like" refers to
+   architecture and behaviour, NOT a decision to run a separate executable,
+   Windows service, local server, background process or network listener.
+2. STABLE DEVELOPER INTERFACES: Provide documented, versioned Core-to-consumer
+   interfaces for EFB pages and modules that need shared information. Consumers
+   should depend on those interfaces, not on SimConnect/provider internals.
+   The design should preserve compatibility across normal module evolution
+   where existing Core capabilities suffice. This is an internal interface
+   design requirement, not approval for a public SDK or independently
+   replaceable binaries.
+3. EXPANDABLE SHARED SUBSCRIPTIONS: Enable current and future EFB consumers to
+   request the simulator/provider information they actually need through Core,
+   reusing shared source subscriptions where practical. The principle is
+   approved; request/subscription contracts, data type discovery, rate
+   negotiation, consumer lifecycle, failure isolation, back-pressure, provider
+   limits and compatibility rules STILL REQUIRE RESEARCH AND APPROVAL.
+   Preserve approved SimConnect Q3/Q4: demand-driven shared requests, bounded
+   work, and essential background consumers continuing when minimised.
+4. INDEPENDENT MODULE DEVELOPMENT: Design pages and modules with clear
+   responsibilities and versioned dependencies so they can evolve without
+   gratuitously changing the Core framework or unrelated consumers. Changes
+   to Core remain possible when a genuinely new source capability or contract
+   is needed. A module may need separate rebuild/packaging even if its design
+   is independent; independent binary deployment is not promised.
+
+EXPLICITLY PARKED FOR LATER — NO C0.1 COMMITMENT
+- Distribution as separately installable/independently updatable EFB modules.
+- A public Black Box Core developer kit/SDK or public third-party module API.
+- Running Core as an independent executable, Windows service or separate
+  process; choosing native IPC, loopback transport or other local mechanisms.
+- Optional Core LAN/multi-PC hosting, external clients, hardware interfaces,
+  device pairing and related networking mechanisms.
+These remain future research options, not rejected features or implicit
+implementation requirements. Preserve the approved secure-default rules:
+no initial public listener, default LAN/internet hosting, remote administration
+or router auto-forwarding, and no essential security behind future pricing.
+
+C0.1 IMPLICATIONS / WORKSTREAM OWNERSHIP
+- First NEW C0.1 still means a complete EFB shell and an intended functioning
+  MSFS 2020 SimConnect-backed Logbook, with no application code or build yet.
+- Main Development Chat owns overall component architecture, shared contract
+  approval, framework and packaging/release decisions.
+- Black Box Core Dev researches and proposes service-like Core technical
+  behaviour, provider adapters, shared distribution and expandable
+  subscriptions; retains centrally managed simulator access.
+- Logbook Page Dev owns the distinct Black Box Flight Recorder's workflow,
+  event definitions, recorded data, persistence/recovery and presentation.
+  Recorder failure must not unnecessarily interrupt other Core consumers.
+- Each workstream owns security and simulator/resource-performance impacts
+  within its scope; Main coordinates whole-EFB regression review.
+- A further detailed Core/interface proposal and formal handoff to Main are
+  needed before selecting or implementing a technical contract.
+
+REVISION HISTORY ADDENDUM
+2026-11-22 — v1.5 (PROPOSED COMPLETE REPLACEMENT FOR OWNER / MAIN REVIEW):
+Recorded owner approval of service-like Core, stable internal developer
+interfaces, expandable shared subscriptions (detailed design still open)
+and independent module development. Explicitly parked module distribution,
+public SDK, separate-process hosting and future LAN/multi-PC/hardware ideas.
+Preserved earlier approvals, Q1–Q15, C0.1 boundaries, history and workstream
+ownership. Documentation only; no code, tests or builds.
+
+
+22. LOGBOOK PAGE DEV — COMPREHENSIVE DESIGN INVENTORY AND OWNER PRIORITIES — 22 NOVEMBER 2026
+-------------------------------------------------------------------------------------------------
+Origin: Logbook Page Dev comprehensive handoff dated 22 November 2026,
+reconciled in Main Development Chat against the six current Project Sources.
+Status: FEATURE INVENTORY / OWNER INTERESTS / WORKING PREFERENCES, except
+where an existing approved principle is identified. NO Logbook layout,
+recording mode, data schema, release feature list or test criterion is newly
+approved by recording this inventory. Logbook design was temporarily paused for Main reconciliation at the
+22 November handoff; workstream remains ACTIVE and can resume on owner
+direction without another administrative prerequisite.
+
+DESIGN RESPONSIBILITY AND RELATIONSHIP TO CORE — ALREADY APPROVED
+- Logbook Page Dev owns the COMPLETE Logbook feature: UI/UX, current-flight
+  presentation, recording workflows and events, history, record details,
+  statistics, edits, local persistence, recovery and the distinct Black Box
+  Flight Recorder. Data selected for recording/display and UI design MUST be
+  developed together, not as a sequential data-only exercise.
+- Black Box Core remains the shared information gateway; the Recorder
+  subscribes to what it needs. Live panels may consume Core directly.
+  Simulator connection state and flight recording state remain distinct.
+  SimConnect feasibility, cadence and quality belong to Black Box Core Dev;
+  shared interfaces and whole-EFB integration belong to Main.
+- Existing C0.1 full-shell / MSFS 2020 / read-only / local-first goals remain;
+  this feature inventory DOES NOT add all items below to C0.1.
+
+OWNER-EXPRESSED PRODUCT PREFERENCES
+- The Black Box Club branding includes deliberate tongue-in-cheek innuendo,
+  but the EFB must look PROFESSIONAL, credible, modern and attractive to the
+  wider flight-simulation community; use subtle personality, not gimmicks.
+  Both casual and experienced pilots should be able to use it comfortably.
+- FREIGHT PILOTS MUST NOT BE OVERLOOKED. The owner strongly favours exploring
+  meaningful freight support, including large freighters and smaller cargo
+  aircraft. Interest is not approval of a specified freight feature set.
+  Avoid designing a passenger-only structure that makes freight an afterthought.
+- The Logbook should potentially serve passenger airline, freight, private/GA,
+  bush, helicopter, training, charter and specialist pilots, including those
+  flying offline without VATSIM. An inclusive common flight record with
+  OPTIONAL operational extensions was proposed, not approved. Overlapping
+  operations must remain conceivable (e.g. bush freight or medical helicopter).
+- The owner wants practical design progress, not recurrent administration,
+  exhaustive questionnaires or premature selection of UI layouts. See section
+  24 and the Chat Register development-first workflow correction.
+
+POTENTIAL RECORDING AND RECORD-MANAGEMENT FEATURES — NOT YET SELECTED
+- Automatic, manual or HYBRID recording; optional pilot start/stop controls;
+  independent recording status and simulator connection status.
+- Flight start/completion, phase transitions, takeoff and landing detection;
+  incomplete-record preservation; safe shutdown and partial recovery after
+  simulator/application crashes, data gaps and reconnections.
+- Pilot corrections, manual historical flight creation, record editing with
+  appropriate auditability, and review of missing/incomplete details.
+- Flight identification candidate fields: date, manufacturer/type/model,
+  registration, airline/operator, flight number, callsign, departure and
+  destination airports, actual origin/arrival information, route, distance,
+  intermediate stops, flight purpose, remarks/notes. External flight-plan
+  fields and aircraft identity must be validated per source.
+- Flight-time candidates: off-block, on-block, takeoff, touchdown, block time,
+  airborne time, total elapsed time, day/night time, simulator versus wall
+  clock, pause and Active Pause intervals. None of these precise definitions
+  has been approved. Different operations may need different interpretations.
+- Landing/flight candidates: number of takeoffs/landings, airport, runway,
+  touchdown time, landing vertical rate, G-force where available, speed,
+  altitude, distance, and possible fuel/aircraft performance fields. Landing
+  rate, G-force, runway detection and addon-specific fields are UNVERIFIED.
+
+FREIGHT AND CARGO DESIGN CANDIDATES — OWNER-EXPRESSED HIGH INTEREST
+- Cargo type/description/weight; shipments or consignments; consignment
+  origin/destination and delivery details; planned versus actual payload;
+  optional manifests, notes and freight-specific flight data.
+- Scheduled freight, cargo charter, humanitarian flights, special cargo,
+  remote-area/bush deliveries, delivery completion, possible loading and
+  unloading times.
+- A freight ASSIGNMENT may span multiple flight SECTORS (example Sydney ->
+  Melbourne -> Adelaide -> Perth). Proposed model: preserve each sector as
+  its own flight record and optionally link sectors to a broader assignment,
+  permitting delivery history and meaningful freight statistics.
+- Include small and large freight operations. Cargo descriptions and actual
+  consignments would typically be manually supplied or imported from a
+  separately supported integration; SimConnect must NOT be assumed to know
+  cargo contents. Payload-change detection is an UNVERIFIED research idea.
+- Candidate freight analytics: cargo carried, consignments/deliveries,
+  shipment history, mission/assignment completion and operation breakdowns.
+  None has been selected for C0.1.
+
+OTHER OPERATION TYPES — IDEAS ONLY
+- Passenger airline, GA/private/recreational, bush, helicopter, training and
+  circuit flights, charter, SAR, medical transport, survey/positioning,
+  military-style simulation and other specialist operations.
+- No mandatory categorisation, operation taxonomy, required conditional
+  fields or special handling has been approved. A pilot should not have to
+  complete irrelevant passenger or cargo fields to record an ordinary flight.
+
+HISTORY, STATISTICS, JOURNAL AND ANALYTICS — FEATURE CANDIDATES
+- History: chronological flights, searches/filters by aircraft, date,
+  route or operation, detailed record inspection, edits, incomplete versus
+  complete status, optional visual cards and journey maps.
+- Statistics: flight counts, flying/block/airborne hours, aircraft types,
+  airports visited, frequent routes, distance, landings, time-period trends,
+  cargo and completed deliveries, operation-type breakdowns.
+- Flight journal: route maps, journey summaries, personal notes, photos or
+  screenshots, visual cards, notable events, achievements/milestones.
+- Advanced Black Box analysis: recorded flight paths, event timelines,
+  altitude/airspeed/groundspeed/vertical-speed history, takeoff and landing
+  analysis, fuel-use trends if supported, technical flight reviews, playback
+  or telemetry replay. These are OPTIONAL and could be higher-cost; no
+  continuous high-rate/unbounded capture has been authorised.
+
+PRODUCT PRESENTATION OPTIONS — NONE SELECTED
+Five product emphases were discussed: (1) Traditional Pilot's Logbook,
+(2) Flight Journal, (3) Black Box Flight Data Recorder, (4) Virtual Airline /
+VATSIM Operations Log, (5) Integrated Pilot Logbook. These are alternatives
+or potentially complementary views of the same flight record, not five
+approved software modules or a required product structure.
+Four candidate user experiences: CURRENT FLIGHT (aircraft, route, elapsed
+flight/recording status and missing fields); FLIGHT HISTORY (review/search/
+filter); FLIGHT DETAILS & OPERATIONS (timing, events, notes and corrections);
+STATISTICS (summary and optional operational breakdowns). They are NOT
+approved separate pages or tabs.
+Unselected layouts: history-first with compact current flight, current-
+flight-first, traditional table, visual cards/journal, technical analysis,
+and combined overview with drill-down. Previous mock-ups are concepts only.
+The owner explicitly declined premature layout selection and has not chosen
+between traditional entries, complete records and visual journals.
+
+DATA PROVENANCE, EDGE CASES AND OPTIONAL SOURCES
+- Design candidates should distinguish OBSERVED simulator/provider data,
+  DERIVED states/events, PILOT-ENTERED values/corrections and IMPORTED
+  external information; record source/units/timestamps and quality when
+  needed. Never present missing, stale or inferred information as live fact.
+- Edge cases to address before implementation: touch-and-go/circuits,
+  multiple sectors in a simulator session, Pause/Active Pause, simulation
+  rate/time changes, restart/crash, disconnection, aircraft changes,
+  teleportation, helicopters, minimised recording, partial information and
+  isolated Recorder failure. Exact behaviours are not yet specified.
+- Possible sources: MSFS 2020 SimConnect first, plus future approved VATSIM
+  network information, SimBrief, aircraft adapters, pilot entries and other
+  supported integrations. VATSIM data is NOT SimConnect data. Availability,
+  API access, authentication and licensing are not presumed.
+
+PERFORMANCE / FUTURE-SCOPE CANDIDATES
+- Local manual cargo/operations fields, histories and on-demand summaries
+  may be relatively lightweight, but this is qualitative, not measured.
+- Continuous tracks, detailed telemetry, live maps/graphs, addon-specific
+  polling and complex analytics may be more expensive. Core must still
+  request only active needed data; Recorder and UI work must be bounded.
+- Suggested conceptual levels ONLY: Level 1 Essential Flight Log (events,
+  times, storage, history, corrections, recovery); Level 2 Operational
+  Enrichment (freight, manifests, notes, assignments, statistics, optional
+  imports); Level 3 Advanced Black Box (tracks, graphs, technical analysis).
+  This is NOT an approved release roadmap or an exclusion rule. Some Level 2
+  functions might be practical earlier, after review.
+
+STILL OPEN — DO NOT PRETEND THESE ARE DECIDED
+Recording mode and triggers; flight-time definitions; required versus
+optional fields; events, circuits/multi-leg semantics; cargo data and
+assignment structure; corrections and integrity; history/statistics and UI;
+advanced recording scope; C0.1 exact boundary and acceptance criteria.
+The Logbook specialist's preliminary telemetry handoff (aircraft identity,
+position, altitude, groundspeed, on-ground, vertical speed as needed, pause/
+time, optional engine/movement, connection/data quality and derived events)
+remains a CANDIDATE INVESTIGATION LIST, not a validated schema, sampling
+rate or approved SimConnect mapping. Data Requirements Register v0.2 stays
+in force until a separately reviewed update.
+
+23. BLACK BOX CORE DEV HANDOFF — TECHNICAL PLANNING AND STATUS — 22 NOVEMBER 2026
+-----------------------------------------------------------------------------------
+Origin: Black Box Core Dev comprehensive handoff to Main dated 22 November.
+Status: reconciliation / technical research planning, not implementation.
+
+- The Core specialist confirms existing Source coverage of APPROVED high-
+  level principles: service-like logical Core, stable internal developer
+  contracts, expandable shared data requests, independently maintained
+  modules, centrally managed SimConnect, and distinct Flight Recorder.
+  No new owner-approved Core function was identified as omitted.
+- Clarified design in ordinary terms: EFB page/module requests data from Core;
+  Core identifies a SUPPORTED source, obtains or reuses data, and delivers it
+  through a stable contract with quality/status where appropriate. Future
+  sending/receiving does NOT authorise simulator write/control operations.
+  A source need not be SimConnect; approved providers may have their own
+  legitimate upstream connections. Core is not a mandatory recorder.
+- Initial Core research/deliverable CANDIDATES for a functional C0.1:
+  suitable MSFS 2020 SimConnect SDK/library; minimum real Logbook telemetry;
+  central connection in automatic/manual mode; controlled recovery and
+  diagnostics; versioned data/quality contract with source/time/units;
+  consumer-driven shared subscriptions; background essentials while
+  minimised; slow/failed consumer isolation; performance/reliability tests.
+- Proposed TEST SCENARIOS, NOT APPROVED PASS CRITERIA: actual MSFS 2020
+  connection and data, normal/Active Pause, stale/gap/disconnect/reconnect,
+  minimised essential subscriptions, graceful shutdown, independent consumer
+  fault isolation, CPU/RAM, simulator FPS and frame-time distribution/spikes.
+- The Core specialist prepared a requirements request for Logbook Page Dev,
+  but had no confirmation of Logbook's receipt or any agreed C0.1 schema.
+  The Logbook comprehensive handoff likewise confirms its recording/events/
+  timing requirements are still unapproved. This is an ordinary design
+  dependency, NOT a reason to halt independent research or UI exploration.
+- Early environment ideas: project virtual environments, VS Code and Git,
+  PyInstaller packaging, PySide6/Qt, Tkinter/CustomTkinter or wxPython,
+  Python version compatibility. These were OPTIONS, not owner choices.
+  Main owns final UI/development-environment decisions after evaluation.
+- Research candidates include a standard MSFS aircraft first, SDK versus
+  Python wrappers, practical subscription cadence, and minimum local Core
+  arrangement. No aircraft, toolkit, wrapper, process boundary or transport
+  was selected. Parked: external Core SDK, independently installable modules,
+  separate Core service/IPC, hosting, multi-PC cockpits, networked clients
+  and hardware integration until separately authorised.
+- Current Source snapshots available to both specialists: Project Record
+  v1.5, Chat Register v1.5, SimConnect Record v0.5, Data Register v0.2,
+  Aircraft Plugin Framework v0.3, founding Master Prompt unchanged.
+  The owner confirmed the ongoing specialist chat was renamed Black Box
+  Core Dev and, per the Core specialist handoff, confirmed replacement of
+  the v1.5 and v0.5 technical/source records. Historical 'proposed for
+  owner review' change-history labels should not be mistaken for currently
+  unresolved architectural approvals. Earlier text showing the chat UI
+  rename as pending is superseded by owner confirmation in Main.
+- The existing SimConnect Q1–Q15, initial read-only boundary, separate
+  MSFS 2024 validation, core/recorder isolation, plugin safety, security,
+  performance and full-shell NEW C0.1 requirements are preserved. No
+  simulator implementation/testing/build has happened.
+
+24. OWNER-DIRECTED DEVELOPMENT-FIRST WORKFLOW CORRECTION — 22 NOVEMBER 2026
+----------------------------------------------------------------------------
+Status: Owner-directed change to HOW development chats use the existing
+process. Supplements, and takes precedence for routine chat behaviour over,
+earlier administrative phrasing. Does NOT relax Source authority, safety,
+workstream ownership, design approval or the explicit no-code/build rule.
+
+PROBLEM IDENTIFIED
+Multiple chats repeatedly recapped already-approved decisions, requested
+hand-offs and Project Source revisions before doing ordinary design work,
+reasked settled questions, and created avoidable owner administration.
+The owner expressly requires this to stop; visible development progress is
+the primary success criterion, not the volume of coordination paperwork.
+
+OPERATING RULES — APPLY TO MAIN AND EVERY ACTIVE SPECIALIST
+1. DEFAULT TO THE REQUESTED DESIGN/RESEARCH WORK. Begin solving the owner's
+   actual request using known context and current approved decisions. Do
+   not force a catch-up, document rewrite, checklist or handoff first.
+2. TREAT APPROVED DECISIONS AS SETTLED. Reopen only for owner request,
+   credible new evidence or a concrete technical/Source conflict. Identify
+   exactly what changed rather than rehashing an entire design.
+3. DON'T TURN OPEN DESIGN QUESTIONS INTO BLOCKERS. Distinguish a necessary
+   immediate choice from later questions; offer sensible proposals and
+   proceed with independent areas where possible. Avoid repeated long
+   questionnaires and premature UI/technical selection.
+4. OWN THE WORK WITHIN THE CHAT'S REGISTERED SCOPE. Handle related minor
+   cross-workstream context sensibly. For true cross-cutting/architectural
+   changes, route to Main with ONE short copy-ready summary. Do not send
+   the owner around a loop of reciprocal handoffs.
+5. UPDATE SOURCES AT MEANINGFUL MILESTONES, before implementation when
+   approved specifics are required, when the owner explicitly requests, or
+   to resolve a material conflict. Ordinary brainstorming needs no immediate
+   Source replacement; maintain status of ideas in the existing discussion
+   until consolidation. When revising, keep full replacements and preserve
+   approved requirements, exact filenames and history.
+6. 'CATCH UP ON PROJECT' remains an ON-DEMAND read-only command, not an
+   automatic prerequisite to ordinary design or every forwarded handoff.
+7. BE DIRECT AND USEFUL. Keep coordination proportional to the task. Do not
+   repeatedly instruct the owner in established manual procedures or create
+   new documents/chats just to tidy administrative status.
+8. SAFEGUARDS REMAIN: Project Sources authoritative for approved records;
+   owner makes final decisions; no unauthorised code, testing or builds;
+   external/source claims must be verified; security, simulator performance,
+   full EFB release shell and record integrity are unchanged.
+
+REVISION HISTORY ADDENDUM
+2026-11-22 — v1.6:
+Consolidated both 22 November specialist handoffs without promoting feature
+ideas into approvals. Preserved Logbook product/branding and freight priority,
+full UI/recording feature inventory, unselected layouts and event semantics;
+recorded Core proposed C0.1 research/testing and completed chat rename;
+introduced owner-directed development-first workflow correction. Retained
+all prior sections, all earlier change-history entries and the approved
+single-computer C0.1, Core/Recorder, simulator/performance and clean-build
+boundaries. Documentation only; no application code, tests or builds.
+
+
+25. LOGBOOK UI/UX Q1-Q14 AND WHOLE-EFB DESIGN MILESTONE — 22 NOVEMBER 2026
+--------------------------------------------------------------------------------
+Status: Owner-approved/accepted design direction as specified below; NOT
+implemented, Windows-tested, SimConnect-verified or committed in full to C0.1.
+Source evidence: TWO illustrated specialist handoffs dated 22 November 2026,
+now consolidated into one new master source for pilot-facing Logbook design:
+  BBC_EFB_Logbook_Design_Record.docx — v1.0 (new, pending owner upload)
+Shared application visual/interaction record:
+  BBC_EFB_UI_Design_Standards.docx — v1.0 (new, pending owner upload)
+These two new documents complement this Project Record, do not supersede
+SimConnect technical standards, and become active Project Sources only on
+the owner's explicit confirmation of upload.
+
+APPROVED / ACCEPTED LOGBOOK STRUCTURE — Q1-Q7
+- Section-specific pages: Dashboard, Flight History, Black Box (Recorder
+  Management) and Statistics. Remove dedicated Aircraft and Reports pages.
+  Earlier figures showing the removed labels are HISTORICAL concept art.
+- Dashboard approved visual direction for now: aircraft side-profile cards,
+  summary metrics (landing-rate information explicitly included), charts,
+  recent flights and useful navigation. Exact chart metrics remain adjustable.
+- Flight History offers TABLE, CARDS and COMBINED display modes; a quick
+  selector and persisted preference. Shared in-EFB, resizable Flight Details
+  overlay replaces a permanent right-side inspector. Preserve search,
+  filters, selection, display mode and scrolling when the overlay closes.
+- A SINGLE shared EFB aircraft profile-image library is APPROVED as an
+  application-level asset resource, not exclusive to Logbook or Core.
+  Side-on aircraft TYPE profiles, optional cosmetic liveries, generic
+  silhouettes if no match. Artwork does not change aircraft-type identity;
+  card-to-history type filtering is a proposed shortcut, not C0.1 scope.
+- Black Box page is Recorder Management: current status plus attention queue
+  for problematic native logs, not another complete-flight history or chart
+  screen. Review, acknowledge/ignore genuine gaps, and pilot-controlled
+  deletion as appropriate. Acknowledging a gap DOES NOT erase missing-data
+  evidence or falsely verify a damaged record. Ordinary absent telemetry
+  from manual/imported entries is NOT a native Recorder fault; genuine import
+  contradictions/errors warrant a plain-language review message.
+  Exact deletion recovery, confirmation and retention remain OPEN.
+- Statistics page combines useful totals, aircraft/operational breakdowns,
+  charts and freight analysis when supported. Visual accepted for now,
+  subject to evidence from saved records and later refinements.
+- Main Settings > Data Management > Export All Data replaces the dedicated
+  Logbook Reports page. Data export and RESTORABLE BACKUP are distinct needs;
+  methods/formats/retention remain OPEN. Logbook display preferences belong
+  within the common Main Settings Section.
+
+APPROVED LOGBOOK FUNCTION AND UI DESIGN — Q8-Q14
+- Shared Customise Layout / Done capability is APPROVED for Logbook and
+  In-Flight, with INDEPENDENT section layouts and saved preferences.
+  Allows drag/resize/reorder, show/hide, density, presets and Reset to
+  Default. Dashboard and Statistics are fully customisable; Flight History
+  supports view, columns, cards and density preferences. Recorder Management
+  and in-EFB Flight Details stay task-focused, not freeform canvases.
+  Approved Logbook visual concept remains its FACTORY DEFAULT. Implementation
+  framework, persistence format and C0.1 scope remain undecided.
+- One unified Flight Editor for manual, native-logged and imported flights.
+  Four required fields for a MANUAL flight: aircraft type, From, To, flight
+  date. All other fields optional; missing optional data cannot block save.
+  Autofill from available trustworthy sources where supported, with pilot
+  edits/overrides and preservation of ORIGINAL data and correction history.
+  No SimBrief/VATSIM/third-party dependency is mandatory.
+- Diverted status and alternate/context fields appear ONLY for CONFIRMED
+  diversions. Pilot may confirm/dismiss a suggested diversion or mark one
+  manually. Keep original planned destination separate from actual landing.
+  A nominated alternate does not prove diversion. Detailed detection OPEN.
+- Optional crew count, PAX count, baggage weight and freight weight (plus
+  optional description), suited to passenger, dedicated-freight and Combi
+  aircraft. A pilot may override operation classification. Total Payload may
+  be sourced/calculated or pilot-entered; DO NOT invent default crew/PAX
+  masses or present a partial/estimated payload as confirmed actual.
+  Freight assignment linking, manifests/deliveries, specialist/VSOA extras
+  and Dispatch-style freight planning are deferred/not yet scoped.
+- Flight Details OVERLAY Option B APPROVED: persistent full side-on aircraft
+  profile plus route, aircraft, date, duration, landing rate (if available)
+  and status summary above Overview/Black Box/Operations/Notes/Record History
+  tabs, all inside the EFB rather than an OS pop-out.
+- Responsive layout: adaptive layout is PROVISIONAL starting preference;
+  fixed scrolling layout remains a comparison for an owner-authorised
+  Windows concept build. No responsive implementation has been validated.
+- Flight Logging: AUTOMATIC WITH MANUAL OVERRIDE APPROVED high-level mode.
+  Use pilot-facing 'Flight Logging' rather than 'Recording', reserving Black
+  Box Flight Recorder for the component. Start/Stop controls as applicable;
+  manually STOPPING an active log must ask confirmation. Start/finish event
+  rules, pause/circuits and interruption recovery remain OPEN.
+- Main Settings > Flight Logging & Privacy: plainly explain what is saved,
+  where and why, local storage, provenance, available review/export/deletion
+  and any optional external exchange actually implemented. Do not promise a
+  final data inventory or transfers before functionality is designed.
+- PERMANENT BOTTOM FOOTER, WHOLE EFB: independent SimConnect connection and
+  Flight Logging status displayed SIDE BY SIDE on Dispatch, In-Flight and
+  Logbook (and available throughout the shared shell). SimConnect click
+  retains Settings > SimConnect > Connection Diagnostics. Clicking Flight
+  Logging shows compact current-flight information and controls; Stop
+  Logging confirmation is mandatory. Do not conflate the two statuses.
+
+WHOLE-APPLICATION UI AND TERMINOLOGY — OWNER-APPROVED
+- The owner approved applying the designated Logbook Dashboard Source image's
+  dark navy/charcoal, cool-blue accent, compact rounded-card typography and
+  restrained status colour language across ALL EFB sections for now; may
+  refine later. Shared standards are in the new UI Design Standards master.
+- Standard terms: SECTION = major application area (Dispatch, In-Flight,
+  Logbook, Settings); PAGE = navigable screen within a Section; WORKSPACE =
+  arrange/interact area; MODULE = feature or integration; PANEL = visual
+  container. These are user-facing distinctions, NOT a fixed code hierarchy.
+  Individual In-Flight modules may be simple or complex; NOT decided yet.
+- Existing approved slim, dark, borderless Windows shell, top navigation,
+  Settings access and right-anchored In-Flight Modules launcher remain.
+  Collapsible launcher proposed; manual versus automatic collapse deferred
+  for comparative concept-build evaluation. Launcher may not be displaced
+  by resizing even when collapsed.
+- Collective BLACK BOX CLUB logos (official and print versions) are the
+  club/collective brand, NOT approved software app icons/logos. Their ZIP
+  package and separate UI concept image may be held in Project Sources as
+  reference assets. EFB app branding remains distinct and undecided.
+
+COORDINATION / RELEASE STATUS
+- Main is the SINGLE coordinator/author of complete Project Source master
+  replacements, based on specialist handoffs at useful milestones and as
+  context-loss protection. Specialist chats own their design/research, not
+  independent competing Source master revisions. The owner approves and
+  manually uploads replacements; nothing is active until confirmed.
+- Update Sources proactively if lengthy discussions risk losing decisions;
+  exact token capacity is not exposed and no automated cross-chat memory
+  monitoring is assumed. 'Save our progress' requests preparation of a
+  complete replacement as appropriate, not app implementation.
+- Core remains provider/data gateway; Logbook retains Recorder workflow,
+  events, data integrity and UI. Detailed simulator field availability,
+  polling, flight-time rules, flight-detection and exact C0.1 deliverables
+  remain UNAPPROVED until their own reviews.
+- NEW C0.1 remains intended full EFB shell with a working local read-only
+  MSFS 2020 SimConnect-based Logbook; no CURRENT application code, simulator
+  tests or build exists. These handoffs do not authorise any of them.
+
+REVISION HISTORY ADDENDUM
+2026-11-22 — v1.7:
+Centralised owner-confirmed Main/Logbook Q1-Q14 UI and function decisions;
+added approved shared layouts, artwork resource, Settings and dual bottom
+status indicators; classified responsive design and deferred features;
+recorded common interface terminology and Main-only Source maintenance,
+with proactive preservation before conversation context loss. Introduced
+illustrated Logbook Design Record and shared UI Design Standards as proposed
+new Project Sources. Preserved v1.6 and all earlier content/history intact.
+Research/design only; no application implementation, tests or builds.
+
+
+26. NEW C0.1 IMPLEMENTATION-PREPARATION / LOGBOOK TELEMETRY COORDINATION — 23 NOVEMBER 2026
+-------------------------------------------------------------------------------------------------
+Status: Development priority and research approach owner-confirmed; technical
+choices, final C0.1 feature inventory, implementation/tests/builds NOT authorised.
+This section takes precedence where earlier historical entries say the 23
+November Logbook telemetry handoff had not yet been delivered.
+
+OWNER-CONFIRMED DIRECTION — FOCUS, NOT BUILD AUTHORISATION
+- Freeze NEW speculative feature design and focus on an integrated, WORKING
+  NEW C0.1 concept using already approved designs. Do not cancel approved
+  future ideas; simply keep them out of the immediate preparation effort.
+- Target is the COMPLETE existing EFB shell (Dispatch, In-Flight, Logbook,
+  Settings and permanent side-by-side SimConnect / Flight Logging footer),
+  with a usable local Logbook and actual read-only MSFS 2020 SimConnect-backed
+  Flight Logging. Only incomplete functionality may be marked placeholder;
+  never represent fake data as live.
+- Plan an incremental development and Windows/MSFS validation sequence
+  within C0.1. Intermediate authorised concept builds, if any, must still
+  contain the full shell. Final C0.1 feature commitments, test gates and
+  whether individual UI customisations are functional are NOT yet approved.
+- Performance, data-integrity, clean complete releases, shared Core and
+  separate Recorder ownership remain unchanged. NEW project has no active
+  application code, implementation, tests or build as of this record.
+
+HANDOFFS RECEIVED BY MAIN ON 23 NOVEMBER 2026
+1. Logbook Page Dev: "BBC_EFB_SimConnect_Logbook_Telemetry_Research_Handoff_2026-11-23_v0.1.docx"
+   (8 pages). Includes official MSFS 2020 SDK-documented candidate SimVars,
+   system events, native units, P1/P2/P3 research priorities, internal/derived
+   and manual/import-only fields, proposed quality/validation work, and PMDG
+   737-only initial aircraft-specific research. This is an INVESTIGATION
+   INVENTORY, not a tested mapping, selected algorithm or agreed C0.1 field set.
+2. Black Box Core Dev: "BBC_Black_Box_Core_Dev_C01_Handoff_to_Main_2026-11-23.docx"
+   (7 pages). Includes wrapper versus direct SDK approaches, central data
+   delivery, quality/timestamps, one-worker proposal, FSUIPC's unchanged
+   optional status, aircraft plugin research and sequential open decisions.
+Both documents are supporting handoff evidence, NOT competing Project Source
+masters. The actual data candidate register is kept in the updated
+BBC_EFB_SimConnect_Data_Requirements_Register.txt v0.3; connection research
+is tracked in BBC_EFB_SimConnect_Integration_Development_Record.txt v0.6.
+Do not re-request the broad data inventory from Logbook: it HAS been supplied.
+
+APPROVED TECHNICAL EVALUATION DECISION — OWNER, 23 NOVEMBER
+- Evaluate an EXISTING Python library for the official SimConnect API FIRST;
+  retain direct Python/native SDK bindings (e.g., ctypes) as the fallback if
+  library coverage, licensing, compatibility, reliability or performance
+  prove unsatisfactory. This approves the evaluation ORDER, not any specific
+  wrapper, library/version, threading scheme, package or implementation.
+- Library candidates mentioned in technical discussions include pysimconnect,
+  simconnect-H and the older odwdinc/Python-SimConnect project. Package
+  version/licence/support claims are RESEARCH REPORTS to verify against
+  primary project metadata before a choice; AGPL-style distribution concerns
+  require particular scrutiny. No library is approved or tested.
+- A custom C++/C# bridge is an additional technical alternative if needed,
+  but adds language/build/IPC complexity and is not selected.
+- SimConnect is first. FSUIPC7 REMAINS a documented optional secondary or
+  alternative; the owner has NOT ruled it out, required it, or approved it
+  for C0.1. Compare actual capability/value later; no FSUIPC connection yet.
+
+AIRCRAFT-SPECIFIC RESEARCH BOUNDARY
+- PMDG 737 ONLY is the current initial add-on FEASIBILITY RESEARCH focus,
+  per owner's Logbook/Core discussions; research installed official SDK,
+  vendor permissions, Client Data configuration, useful fields and generic
+  fallback. A public mirrored NG3 header is not official installed validation.
+- Fenix, iniBuilds and other vendors remain valid future modular targets but
+  are DEFERRED from the first add-on investigation. Neither PMDG 737 nor any
+  vendor adapter is approved as a required C0.1 implementation.
+- Generic SimConnect Flight Logging must not depend on optional PMDG data.
+
+WORKSTREAM DISTINCTION / DATA TRUTH
+- Logbook Page Dev owns Recorder semantics: when a flight/log starts/ends,
+  flight phases, off/on-block and airborne time, pause treatment, circuits,
+  multiple legs, event validity, saved data, edits/audit, gap preservation,
+  recovery and the pilot UI. These details are still open for owner review.
+- Black Box Core Dev owns which supported SDK values/events can be read,
+  native/normalised units, source timestamp, freshness/capability, safe
+  connection/reconnect, shared subscriptions, provider/aircraft SDK research
+  and measured technical feasibility. It does not decide Recorder events.
+- Main Development owns the interface/architecture and complete-shell scope,
+  technology and release readiness with owner approval. Avoid duplicate
+  telemetry managers or unbounded/high-rate collection.
+- Examples requiring careful validation: PLANE TOUCHDOWN NORMAL VELOCITY
+  is published as a last-touchdown measurement but may be stale, unmatched
+  to the current contact or aircraft-dependent; latitude/longitude do NOT
+  directly establish airport ICAO; station weights do NOT provide a reliable
+  crew/PAX/baggage/freight breakdown. No invented provenance or precision.
+
+OPEN DECISIONS TO HANDLE INDIVIDUALLY — NOT A NEW QUESTIONNAIRE
+A. Evaluate actual Python wrappers for supported SDK features, licensing,
+   packaging and maintenance; then owner selects library vs native fallback.
+B. Logbook/owner settle the MINIMUM event, timing, pause, multiple-leg and
+   recovery rules needed for a reliable first flight log. Advanced cases can
+   be bounded/deferred with honest behaviour, not assumed solved.
+C. Black Box Core maps candidate fields/events to supported API capability;
+   agree data contract, consumer subscriptions, stale thresholds and actual
+   sampling after feasibility research and approval.
+D. Define smallest functional C0.1 Logbook subset, placeholders, Windows/MSFS
+   test matrix and measurable acceptance checks with owner approval.
+E. Confirm initial PMDG 737 research evidence and separately consider FSUIPC's
+   value only when it affects the approved initial use cases.
+F. Explicit approval is still REQUIRED before writing application code,
+   running implementation/simulator tests, packaging or initiating builds.
+
+NEW SUPPORTING SOURCE / PLANNING RECORD
+"BBC_EFB_NEW_C0.1_Scope_and_Readiness_Plan.txt" v0.1 is a NEW planning
+master prepared with this update. It separates established decisions from
+proposed minimum features, implementation sequence, verification and pending
+approval gates. It is NOT a blanket authorisation to implement the contents.
+The owner confirms Project Source replacement/upload; only then is this
+revision treated as current for subsequent workstreams.
+
+REVISION HISTORY ADDENDUM
+2026-11-23 — v1.8:
+Recorded the owner-directed C0.1 feature freeze and complete-shell, live
+MSFS 2020 Logbook objective; reconciled both 23 November specialist handoffs;
+confirmed existing-library-first evaluation with native SDK fallback as
+APPROVED APPROACH ONLY; preserved FSUIPC7 optional status and PMDG 737-only
+initial add-on investigation; registered the NEW C0.1 scope/readiness planning
+master, with explicit owner approval gates and no code/tests/builds. All
+v1.7 and earlier Project history and decisions remain intact.
+
+
+27. IMPLEMENTATION ARCHITECTURE / C0.1 SCOPE DECISIONS — 23 NOVEMBER 2026 (v1.9)
+----------------------------------------------------------------------------------
+CURRENT STATUS: The following are the owner's subsequent approvals in Main
+Development Chat, AFTER section 26 and AFTER Source versions v1.8/v0.6 were
+confirmed in Project Sources. They supersede older 'open/unapproved' snapshots
+only for the exact decisions listed. This is NOT approval of an overall C0.1
+application build, Windows/MSFS test or final release.
+
+APPROVED WHOLE-APPLICATION IMPLEMENTATION DIRECTION
+- UI toolkit: Python + PySide6 / Qt Widgets, subject to Windows 10/11,
+  packaging, licence and measured simulator/resource-impact verification.
+  Qt Widgets is the selected UI approach; exact version is not yet pinned.
+- Process layout: NEW C0.1 is ONE modular application process. From NEW C0.2
+  onwards, the OWNER-SELECTED target is separate processes for EFB UI,
+  Black Box Core and Flight Recorder, while retaining one integrated pilot
+  experience. Define IPC, process supervision, startup/shutdown, security,
+  persistence ownership and measurable cost before implementing C0.2.
+- Source organisation: responsibility-based Python packages. Conceptual
+  folders are app/, ui/, core/, recorder/, contracts/, storage/, assets/,
+  tests/ and build_tools/. Folder names are illustrative, not a selected
+  complete source tree. Continue to ship a COMPLETE EFB source tree for any
+  owner-authorised application build; independent Core development does NOT
+  exempt C0.1 from this rule.
+- C0.1 communication: in-process, documented/versioned internal interfaces
+  and event notifications; preserve logical contracts across future IPC.
+  Exact Python event bus, callback mechanism, threading and IPC remain open.
+- Storage: pilot chooses a writable data directory at FIRST LAUNCH; the
+  choice may be Documents, a dedicated C: folder or another local path.
+  Do not require hidden AppData for flight records. The application should
+  verify permissions; data remain inspectable user-owned local files.
+- Data ownership: individual components own their information and writes;
+  common safe file utilities support validation, atomic writes and error
+  handling. The Recorder/Logbook record-management path must prevent
+  competing writers after the C0.2 process split. Exact file schemas,
+  cross-process locking, backup/migration and crash recovery remain open.
+- Startup/runtime: start in DISPATCH every time; load other UI Sections on
+  demand and preserve sensible per-Section state. Essential Core/Recorder
+  services and their active consumers do NOT depend on what Section is open
+  or whether the EFB window is minimised. Suspend unnecessary visual work.
+- Window layout: HYBRID ADAPTIVE resizing APPROVED: responsive reflow where
+  practical; minimum usable panel sizes and scrolling where required; keep
+  the In-Flight right Modules launcher and BOTH permanent status indicators
+  accessible at all supported window sizes. Windows behaviour not tested.
+- Layout release scope: C0.1 BASIC customisation (panel visibility,
+  responsive/display preferences, section-specific persisted settings);
+  C0.2 onwards full approved drag/reorder/resize/dock/presets and remaining
+  customisation, subject to build validation. This defers implementation,
+  NOT the existing approved full design.
+- Active Flight Logging on application close: display Cancel versus Save &
+  Exit; preserve unfinished flight state and clear failures before exit;
+  never invent a completed flight. Technical persistence/recovery semantics
+  remain Logbook Dev-owned and must be validated before implementation.
+- NEW C0.1 delivery format: PORTABLE ZIP folder/application, not a Windows
+  installer; still supply the complete independent buildable source tree,
+  dependency instructions, changelog, limitations and honest test status.
+
+C0.1 LOGBOOK RELEASE TARGET — OWNER APPROVED OPTION B
+- The approved Q1–Q14 Logbook experience is the C0.1 FUNCTIONAL TARGET:
+  Dashboard, actual stats/charts from available records, Flight History
+  Table/Cards/Combined, search/filters, Flight Details overlay/tabs, unified
+  manual/native/import-aware editor where supported, source/correction
+  history, Black Box Recorder Management and useful Statistics.
+- Standard read-only MSFS 2020 SimConnect Flight Logging remains the native
+  telemetry basis, with manual override, dual permanent statuses and durable
+  records. The specific Flight Recorder algorithm, flight time/phase rules,
+  reliable landing-rate association, data schema, actual third-party import
+  formats and acceptance criteria remain OPEN and must not be fabricated.
+- Exception to 'full Logbook' in C0.1: the advanced full customisable
+  drag-and-drop layout system is already planned for C0.2 onwards. Do NOT
+  silently add deferred freight-assignment workflows, future integrations,
+  user-loadable plugin execution or advanced high-rate telemetry analysis.
+- Where standard data do not provide a trusted metric, label it unavailable
+  or obtain pilot confirmation; never fake landing rate, ICAO, weight or G.
+- All other EFB Sections remain present in every application build; any
+  nonfunctional modules are honestly marked placeholders.
+
+28. GENERAL-PURPOSE CORE / COMPONENT SOURCE EVIDENCE — 23 NOVEMBER 2026 (v1.9)
+--------------------------------------------------------------------------------
+APPROVED GENERAL-PURPOSE CORE DESIGN (NOT AN OPEN PUBLIC PLUGIN SYSTEM)
+- Design Core as an independent, reusable simulator-information framework,
+  NOT a hard-coded Logbook-only data collector. Generic supported SimVar
+  data definitions/typed-unit/indexed requests and supported system events
+  should be available via versioned, demand-driven, shared subscriptions.
+- One central simulator connection; acquire ONLY what active authorised
+  consumers require, with bounded queues/cache, data freshness/lineage,
+  managed errors, reconnect gaps and graceful shutdown. Core must not
+  continuously read every simulator variable merely because its interface
+  can request one. Core itself is not tied to PySide6 or Recorder internals.
+- Future modules MAY eventually need supported simulator COMMAND/WRITE
+  operations (e.g. COM frequency setting). Architect an extensible but
+  CONTROLLED separate command path with capability/permission validation;
+  DO NOT expose uncontrolled raw writes or enable aircraft-changing commands
+  under C0.1. A simulated frequency change is not proof of vPilot control.
+- User-installable third-party module/plugin loading, public developer SDK,
+  addon aircraft plugins and their trust/sandbox/security policies have NOT
+  been designed or approved. This workstream is explicitly parked pending
+  a separate owner-led discussion. This does not repeal the pre-existing
+  aircraft-adapter framework's future research objectives.
+
+AUTHORIZED COMPONENT-SOURCE WORK TO DATE (NOT A COMPLETE APPLICATION)
+- After explicit owner prompts, draft independent Core package source and
+  a simconnect-H adapter behind a replaceable interface; then draft focused
+  corrections to subscription batching/rates, connection continuity, event
+  gating, error reporting and shutdown. Latest draft source archive:
+  BBC_EFB_Core_SimConnectH_Adapter_Corrections_SOURCE_2026-11-23.zip
+  SHA256: e4fe85f9afe439a6e03670dbe61d911606610bae52f96cabb9dc2cc9c19e0e17.
+- These are CODE DRAFTS, NOT active Project Source master replacements,
+  not a selected stable developer SDK, not a full EFB build and not a live
+  working SimConnect integration. Do not stack patches on obsolete drafts;
+  when full application coding is authorised, integrate/refactor consciously
+  from the reviewed complete component source.
+- Off-simulator validation report dated 23 Nov 2026 documents 3/3 broker
+  tests + 5/5 synthetic-wrapper adapter checks PASS (8/8). The five adapter
+  checks use a FAKE simconnect-H implementation; they do NOT prove binary
+  API compatibility, live MSFS behaviour, Windows, performance, flight
+  detection or package security. See
+  BBC_EFB_Black_Box_Core_Validation_Status_2026-11-23.txt.
+- Existing adapter explicitly rejects unverified sub-second subscriptions;
+  accurate touchdown timing/event correspondence and reconnect behaviour
+  are UNVALIDATED. Package-level tests and actual MSFS 2020 tests remain
+  necessary; no simulator FPS/frame-time measurements have been performed.
+
+SIMCONNECT PACKAGE STATUS AND OWNER'S WORKFLOW
+- On 23 November the owner approved simconnect-H v0.7.2 as the FIRST library
+  to evaluate, NOT as the final dependency. It is subject to actual package
+  API, source/dependency, Windows support, lifecycle and performance checks.
+- Owner has now provided both unchanged release files for inspection:
+  simconnect_h-0.7.2-py3-none-any.whl
+    SHA256 ddd3216a4d8303e35c6e8cf2b469cdace443f0b9562c2f6052190023c53c6c7e
+  simconnect_h-0.7.2.tar.gz
+    SHA256 56bd7fb24de7c2db42746a827ae92184059a462d7f67b2a9ae8f212c32dcd994
+  Their presence and hashes are NOT evidence of successful import, full
+  source audit, SDK matching, approved redistribution or runtime validation.
+- Continue package-level validation NEXT. THEN pause for owner discussion
+  of Windows/MSFS 2020 testing and a SAFE, owner-controlled read-only
+  diagnostic collection/monitoring approach. No unattended remote access,
+  automatic chat-to-PC link, background monitoring or separate process
+  service has been approved. Pilot should retain explicit start/stop/share
+  controls. No MSFS test is represented as already run.
+- Detailed third-party licence/redistribution/compliance review is scheduled
+  by owner direction BEFORE FIRST BETA RELEASE; basic dependency/legal
+  viability and security sanity checks still apply before incorporating it.
+  The language of upstream documentation is not evidence of maliciousness.
+
+29. COORDINATION, DEFERRED DETAILS AND REVISION HISTORY (v1.9)
+------------------------------------------------------------
+- Main Development coordinates the whole application, PySide6 layout,
+  source-tree boundaries and future process transition; Black Box Core Dev
+  owns SDK/adapter technical feasibility; Logbook Page Dev owns Recorder
+  semantics and all Logbook UI. Use one focused handoff if necessary, not
+  another full administrative requirements loop.
+- Development sequencing OPTION D ('independent component development with
+  progressive integration') was RECOMMENDED and already informs ongoing
+  authorised component drafts; the owner has not separately approved a final
+  full C0.1 development/release execution plan. Do not retroactively treat
+  the recommendation as blanket authorisation to build the EFB.
+- Q1–Q14 prior approved Logbook design, Q1–Q15 SimConnect requirements,
+  complete-EFB-per-build standard, full replacement Source governance,
+  MSFS-first and simulator-performance obligations remain in force.
+- Changed documentation only in this coordinated update; updating Sources
+  does not authorise further application code or Windows/MSFS testing.
+
+REVISION HISTORY ADDENDUM
+2026-11-23 — v1.9: Consolidated owner-approved PySide6/Qt Widgets, C0.1
+single-process/C0.2 process transition, responsibility-based source tree,
+shared interfaces, selectable data folder, component-owned storage, startup,
+on-demand UI, hybrid resize, layout schedule, close confirmation, portable
+ZIP and full approved Logbook C0.1 target. Recorded reusable general-purpose
+Core, future guarded write path, component-code drafts, 8/8 limited offline
+checks, received simconnect-H packages and hashes, deferred plugin discussion
+and Windows/MSFS monitoring/testing hold. All earlier record/history retained;
+no complete EFB build or live simulator test claimed.
+
+
+30. CODEX MIGRATION FREEZE / LATEST EVIDENCE — 23 NOVEMBER 2026 (v1.10)
+------------------------------------------------------------------------
+STATUS: OWNER-APPROVED PROJECT MIGRATION AND IMMEDIATE IMPLEMENTATION HALT.
+This section is the latest project checkpoint. It preserves the entire v1.9
+record above as history, superseding earlier 'not tested on Windows' or
+'only 8 offline checks' statements where later evidence now exists.
+
+OWNER DIRECTION AND HANDOVER
+- On 23 November 2026 the owner decided to migrate the ENTIRE BBC Integrated
+  EFB development project to Codex. Stop new implementation, builds, native
+  validation and scope progression during preservation and migration.
+- The owner explicitly approved preparation of a complete replacement batch
+  of current Project Source files. No implementation is authorised by that
+  documentation approval. The Codex migration coordinator is the owner; the
+  existing Main/Core/Logbook ChatGPT chats are historical coordination records
+  until the owner confirms the new operating arrangement.
+- The current ChatGPT Project Sources remain the authoritative approved design
+  reference until the owner verifies and confirms a replacement/cutover.
+  This migration batch is a proposed complete Source replacement, not yet an
+  automatically installed Source. Preserve one active master per filename.
+- The entire historical source record, previously approved design decisions,
+  whole-EFB-per-build rule and required owner approvals remain in force.
+
+BLACK BOX CORE HANDOVER EVIDENCE (CODEX REPORTS, NOT FULL SYSTEM TEST)
+- Latest LOCAL SOURCE CANDIDATE: Black Box Core R3.1, contained in
+  BBC_EFB_Codex_Work_Package_2026-11-23.zip under
+  development reviews/BBC_EFB_Black_Box_Core_R3.1_Source_Candidate_2026-11-23/.
+  R3 and earlier drafts are historical candidates. R3.1 is neither a
+  production Core nor a selected final integration/library baseline.
+- R3.1 corrected the earlier R3 false CONNECTED notification on failed
+  dispatch startup and loss of shutdown-uncertainty diagnostics on repeat
+  disconnect. Core provider/broker public interfaces stayed unchanged.
+- 31/31 GUARDED SIMULATED OFFLINE tests PASS, zero failures/errors/skips on
+  64-bit Windows CPython 3.12.14. Coverage includes startup/QUIT, reconnect,
+  callback generations, SimVar numeric/string delivery, freshness, events,
+  demand sharing, cleanup uncertainty, shutdown, bounded queues and simulated
+  contention. These tests used fake wrappers, not native simulator data.
+- Actual supplied simconnect-H v0.7.2 WHEEL imported in a DLL-FREE Windows
+  check. Datatypes and adapter call signatures were checked against the real
+  package. Closed-client registration/retirement/close succeeded in the probe.
+- Separately, a SHA-256-checked x64 MSFS SDK 0.24.6.0 SimConnect.dll loaded
+  and all 12 exports declared by simconnect-H v0.7.2 resolved. NO SimConnect
+  function was invoked and NO simulator session was opened in that probe.
+- A separately owner-authorised LIVE-SMOKE-TEST PREFLIGHT was BLOCKED before
+  opening any connection. simconnect_native/client.py in BOTH supplied v0.7.2
+  distributions omits imports of find_simconnect_dll and
+  is_untrusted_simconnect_dll. With an explicit DLL path, load_dll() raises
+  NameError on is_untrusted_simconnect_dll at line 215. MSFS was not running;
+  no live connection, recorder session or live flight logging was tested.
+  Original external distributions and current Core were left unchanged.
+- Native unsubscribe/close reporting, wrapper native lock/restore behaviour,
+  accurate packet sample age and cadence, ordinary event behaviour on real
+  sessions, touchdown metrics and simulator FPS/frame-time impacts are NOT
+  validated. simconnect-H is a FIRST EVALUATION candidate, not selected.
+- Evidence: BBC_EFB_Main_Development_Handoff_2026-11-23.md plus reports in
+  BBC_EFB_Codex_Work_Package_2026-11-23.zip/test_artifacts/, including
+  r3_1_offline, r3_1_windows_wrapper, r3_1_dll_load and r3_1_live_preflight.
+  These are separate from approved requirements; do not equate a green
+  simulated suite with live simulator or end-to-end application acceptance.
+
+WHOLE-EFB IMPLEMENTATION STATUS AND UNSIGNED FIRST-BUILD PROPOSAL
+- No runnable complete NEW C0.1 EFB, executable, application shell or Flight
+  Recorder has been produced in the current project. The latest deliverable
+  is a stand-alone, offline-tested Core source candidate.
+- The owner asked Main to consider (A) a full Dispatch/In-Flight/Logbook/
+  Settings shell with truthful dual-status footer and functional MANUAL
+  Logbook as an INTERNAL concept checkpoint, while resolving live Core and
+  Recorder rules, versus (B) waiting for verified automatic live logging for
+  the FIRST runnable concept. Main recommended A; the owner DID NOT SELECT
+  A or B, did NOT approve a first-build scope or authorise implementation.
+- The approved NEW C0.1 release target is still the COMPLETE Logbook Q1-Q14
+  functionality, except advanced layout controls deferred to C0.2+, inside
+  the WHOLE EFB, with truthful LIVE MSFS 2020 read-only automatic Flight
+  Logging and manual override. A possible earlier manual concept is not a
+  reduced approved release specification and must never look live/fake.
+- Preserve Python/PySide6 Qt Widgets direction, C0.1 single modular process,
+  C0.2+ planned separate processes, shared Core/Recorder responsibilities,
+  pilot-selected local data directory, Dispatch launch, In-Flight right
+  Modules launcher, responsive resizing and both footer indicators.
+
+NEXT GATES AFTER OWNER-CONTROLLED CODEX MIGRATION (NOT AUTHORISED NOW)
+1. Verify source/doc/code/evidence transfer and reconcile one active master
+   per approved document. Confirm authority cutover and Codex coordination.
+2. Separately approve any corrected simconnect-H evaluation distribution;
+   prove loader preflight before a bounded pilot-controlled MSFS 2020 parked-
+   aircraft read-only smoke test. Do not assume a patch means native safety.
+3. Agree Recorder start/stop, event times, pause, circuits, touchdown,
+   interruption, provenance and durable storage semantics with the owner.
+4. Bring the complete first-build scope (including A/B sequence) back for
+   explicit approval before any NEW C0.1 application implementation/build.
+5. Later validate live logging, Windows UI, flight-log integrity, licensing,
+   failure recovery and simulator CPU/RAM/GPU/FPS/frame-time baselines.
+
+REVISION HISTORY ADDENDUM
+2026-11-23 — v1.10: Owner-ordered project halt and migration to Codex;
+recorded R3.1 31/31 simulated tests, actual Windows wrapper import and
+DLL-free API check, separately verified SDK DLL load-only exports, wrapper
+missing-import live preflight blocker and no actual MSFS connection.
+Preserved full approved C0.1 Logbook scope and noted that early manual-first
+concept Option A/B remains UNDECIDED. Original v1.9 and prior history retained.
+No app implementation, build or live logging authorised by this update.

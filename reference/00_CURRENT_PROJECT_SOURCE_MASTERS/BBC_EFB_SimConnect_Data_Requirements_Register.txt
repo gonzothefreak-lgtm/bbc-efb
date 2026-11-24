@@ -1,0 +1,290 @@
+BBC INTEGRATED EFB — SIMCONNECT DATA REQUIREMENTS REGISTER
+Version: 0.4 | Status: Migration freeze; telemetry requirements remain candidates, no live mappings validated | Date: 23 November 2026
+
+PURPOSE
+This document records WHAT simulator data the BBC Integrated EFB requires. It is distinct from the SimConnect Integration Development Record (connection architecture) and Aircraft Plugin Development Framework (aircraft-specific extensions).
+
+DOCUMENT CONTROL — NEW PROJECT SOURCES
+The sole active master is this exact filename under NEW Project > Sources.
+Prepare a COMPLETE replacement TXT for owner review; the owner replaces the
+old Source attachment manually and confirms the upload. Older Library copies
+are historical only. Maintain one active version and store backups outside
+Sources. Preserve approved requirements. These are not implementation results.
+
+SCOPE AND DESIGN CONSTRAINTS (FROM AGREED SIMCONNECT DESIGN REVIEW)
+- MSFS 2020 is the initial target; assess MSFS 2024 compatibility separately.
+- Initial integration is local; retain future network connection capability.
+- Read-only simulator telemetry by default. Do not implement aircraft control commands. Any possible vPilot-related exception requires separate investigation and explicit approval.
+- Request only data used by active consumers; share subscriptions across consumers and use appropriate update rates.
+- Background consumers (for example flight logging or streaming overlays) may continue while the EFB window is minimised.
+- Support simulator absence, disconnects, reconnects, pauses, stale/unavailable data and clean shutdown.
+- Prefer standard SimConnect data where available; aircraft-specific plugins are optional and require validation.
+- Log diagnostic information locally with appropriate retention and optional debug mode.
+
+REQUIREMENTS REGISTER — INITIAL CANDIDATES
+The following are examples for review, NOT yet an approved final telemetry list. Exact SimConnect variable names, units, availability, update rates and aircraft-specific behaviour require technical verification.
+
+ID    DATA REQUIRED                  POSSIBLE CONSUMER / PURPOSE             PRIORITY    STATUS
+SC-001 Aircraft latitude             Position tracking                       TBD         Candidate
+SC-002 Aircraft longitude            Position tracking                       TBD         Candidate
+SC-003 Aircraft altitude             Flight information / flight logging      TBD         Candidate
+SC-004 Groundspeed                   Flight information / progress            TBD         Candidate
+SC-005 Aircraft heading              Flight information / tracking            TBD         Candidate
+SC-006 On-ground status              Takeoff and landing event detection      TBD         Candidate
+SC-007 Simulator pause state         Correct time handling and data updates  TBD         Candidate
+SC-008 Aircraft identification       Aircraft detection / plugin selection    TBD         Candidate
+
+PER-REQUIREMENT DETAILS TO COMPLETE
+- Consumer module/panel and intended behaviour
+- Whether required live, periodically, on change, or only for events
+- Whether needed while EFB is minimised
+- Desired accuracy, units, and freshness tolerance
+- Standard SimConnect support: unverified / verified / unsupported
+- Aircraft-specific adapter needed: unknown / yes / no
+- MSFS 2020 test status and MSFS 2024 test status
+- Failure or missing-data behaviour
+
+OPEN QUESTIONS
+1. Which of the example data items are actually needed by the first approved EFB consumers?
+2. What additional data will those consumers require?
+3. Which requirements must be continuously recorded, versus displayed only when a panel is visible?
+4. Which requirements depend on aircraft-specific systems or third-party add-ons?
+
+WORKFLOW
+1. Project owner provides requested simulator information from other feature-design discussions.
+2. Add or revise an entry here, without prematurely selecting technical variable names.
+3. Research and map each approved requirement to official SimConnect facilities where possible.
+4. Document uncertainty and aircraft-specific limitations.
+5. Agree on polling/event strategy and test criteria before coding.
+
+ADDITIONAL CROSS-CHAT UI / DIAGNOSTICS DATA NEEDS — 17 NOVEMBER 2026
+Status: Approved UI display goals; exact source mappings, units, update rates,
+quality thresholds and all implementations are UNVERIFIED. Distinguish data
+coming from SimConnect from derived EFB/connection-manager information.
+
+ID      REQUIRED INFORMATION              CONSUMER                STATUS
+SC-009  Aircraft vertical speed           Aircraft Status panel   Candidate mapping
+SC-010  Flight phase                      Aircraft Status panel   Derived candidate
+SC-011  Flight-logging status             Aircraft Status panel   EFB internal state
+SC-012  Connection / reconnect / error    Bottom status indicator Connection state
+SC-013  Simulator identity/version        Status hover/diagnostics Connection metadata
+SC-014  Telemetry age / quality flags     Panel and diagnostics   Derived metadata
+SC-015  Active subscriptions and rates    Connection diagnostics Instrumentation
+SC-016  Consumer subscriptions/status     Connection diagnostics Instrumentation
+
+The Aircraft Status panel will also consume SC-003 altitude, SC-004
+Groundspeed, SC-005 heading and SC-008 identity as available. Do not
+invent SimConnect variable names or treat derived state as raw telemetry.
+For each requirement, specify consumers, priority, freshness, minimum
+rate while visible and whether needed when the UI is minimised.
+
+NEW PROJECT APPLICATION BASELINE
+No active software implementation is inherited from the prior Project.
+Historical C0.1–C0.3 are archived. The new C0.1 build has not been made;
+no data mapping, SimConnect integration or live testing has been verified.
+
+CHANGE HISTORY
+v0.1 — Initial illustrative data requirements; none implemented or tested.
+v0.2 — Document control migrated to Project Sources; recorded approved
+UI/diagnostics information needs without claiming verified simulator mappings;
+new build baseline reset. Documentation only, 17 November 2026.
+
+
+C0.1 LOGBOOK TELEMETRY RESEARCH CANDIDATES — 23 NOVEMBER 2026 (v0.3)
+------------------------------------------------------------------------
+STATUS AND PROVENANCE
+- This ADDENDUM incorporates the 8-page "BBC_EFB_SimConnect_Logbook_Telemetry_Research_Handoff_2026-11-23_v0.1.docx" submitted by Logbook Page Dev and reviewed by Main on 23 November.
+- Exact names, SDK-native units and reference IDs below are REPORTED FROM PUBLISHED SDK RESEARCH, not empirically checked against installed MSFS 2020/PMDG, not an approved C0.1 minimum or a measured rate. The SDK-supported unit requested through SimConnect may differ from the native/illustrative unit.
+- P1 = investigate first for reliable automatic logs; P2 = valuable but potentially substitutable; P3 = optional enrichment. These priorities are research triage, NOT an owner-approved release inventory. INT = Recorder/storage-derived; EXT = optional imported/pilot information; neither means a native SimVar.
+- SC-001–SC-016 from the existing v0.2 requirements register ABOVE remain unchanged. The F/I/T prefixes below are handoff cross-references, NOT new approved API identifiers or source contract fields.
+- Black Box Core Dev determines technical feasibility, event availability, unit/freshness/type, subscription strategy and provider fallbacks; Logbook Page Dev defines saved record/event semantics. Main/owner coordinate C0.1 scope and shared contracts.
+
+
+F01–F12: AIRCRAFT POSITION, MOVEMENT AND STATE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ID / EXACT SIMVAR | NATIVE SDK UNIT | USE / IMPORTANT QUALIFIER | PR
+F01 PLANE LATITUDE | radians | Aircraft geolocation; can request degrees for normalized UI. Not an airport ICAO. [MS1] | P1
+F02 PLANE LONGITUDE | radians | Aircraft geolocation; can request degrees. [MS1] | P1
+F03 PLANE ALTITUDE | feet | MSL altitude, flight/phase context; not enough alone for takeoff/landing. [MS1] | P1
+F04 PLANE ALT ABOVE GROUND | feet | Above local surface, useful on approach; ground data and terrain can vary. [MS1] | P2
+F05 GROUND VELOCITY | knots | Taxi/movement detection, flight progress, plausibility check. [MS1] | P1
+F06 SIM ON GROUND | bool | Baseline air/ground state; use with transition confirmation. [MS2] | P1
+F07 VERTICAL SPEED | ft/s | Current indicated climb/descent, not guaranteed the actual touchdown normal impact. [MS1] | P1
+F08 AIRSPEED INDICATED | knots | Optional airborne/touchdown context. [MS1] | P2
+F09 PLANE HEADING DEGREES TRUE | radians | Flight direction; request degrees if preferred. Not actual ground track. [MS1] | P2
+F10 IS SLEW ACTIVE | bool | Flag unphysical movement/repositioning. [MS1] | P1
+F11 PLANE IN PARKING STATE | bool | Supplemental parked context; not authoritative off/on-block detection. [MS1] | P2
+F12 ON ANY RUNWAY | bool | Additional runway context; not proof of runway identity. [MS1] | P3
+
+I01–I06: AIRCRAFT IDENTITY AND ATC ATTRIBUTION
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ID / EXACT SIMVAR | NATIVE UNIT | USE / LIMITATION | PR
+I01 TITLE | string | Loaded aircraft.cfg title; may encode livery rather than canonical type. Manual type correction remains available. [MS1] | P1
+I02 ATC TYPE | string | Simulator ATC identity, not necessarily ICAO type or custom add-on variant. [MS3] | P2
+I03 ATC MODEL | string | Simulator ATC model; needs type normalization. [MS3] | P2
+I04 ATC ID | string | ATC aircraft identifier; candidate registration, not always authoritative. [MS3] | P2
+I05 ATC AIRLINE | string | Simulator ATC airline field, not necessarily VATSIM operator. [MS3] | P3
+I06 ATC FLIGHT NUMBER | string | Exact MSFS 2020 SDK spelling. Source of simulator ATC flight number; NOT VATSIM callsign. [MS3] | P2
+
+T01–T06: SIMULATOR DATE, TIME AND RATE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ID / EXACT ENVIRONMENT SIMVAR | SDK UNIT | WHY / LIMITATION | PR
+T01 ABSOLUTE TIME | seconds | Simulator calendar time; not a wall-clock elapsed-time substitute. [MS4] | P1
+T02 ZULU TIME | seconds | UTC seconds since simulated midnight. [MS4] | P1
+T03 ZULU DAY OF MONTH / ZULU MONTH OF YEAR / ZULU YEAR | number | Simulated UTC calendar date; important around midnight. [MS4] | P1
+T04 LOCAL TIME / TIME ZONE OFFSET | seconds | Optional local-time display, DST/time-zone assumptions to validate. [MS4] | P2
+T05 SIMULATION TIME | seconds | Elapsed simulation time; do not confuse with accumulated flight/block time. [MS4] | P1
+T06 SIMULATION RATE | number | Accelerated-sim handling; pause and real-time policy remain open. [MS4] | P1
+
+SYSTEM EVENTS — SUBSCRIPTIONS, NOT SIMVARS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+SYSTEM EVENT | PURPOSE / LIMITATION | PR
+Pause_EX1 | Full Pause / Active Pause / Sim Pause flags; state provided immediately when subscribed. [MS5] | P1
+SimStart / SimStop / Sim | Simulator running/loading transitions; extra pairs during reset; NOT flight start/end. [MS5] | P1
+AircraftLoaded / FlightLoaded | Detect flight dynamics or flight reload; NOT a trusted new sector by itself. [MS5] | P1
+PositionChanged | Position change via simulator dialog; may miss other forms of teleport. [MS5] | P2
+Crashed / CrashReset | Optional simulator crash context; cannot substitute for app/process-crash recovery. [MS5] | P2
+FlightPlanActivated / FlightPlanDeactivated | Possible plan context only; NOT proof of actual destination or diversion. [MS5] | P3
+
+TOUCHDOWN AND GROUND CONTACT
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+EXACT SIMVAR | SDK UNIT | USE / RISK | PR
+PLANE TOUCHDOWN NORMAL VELOCITY | ft/s | Last-touchdown velocity; if requested in ft/s, magnitude × 60 gives ft/min. Sign and update event must be verified. | P1
+PLANE TOUCHDOWN LATITUDE / LONGITUDE | radians | Last-touchdown location; verify changed on new event, not stale from prior touchdown. | P2
+PLANE TOUCHDOWN HEADING DEGREES TRUE | degrees | Last-touchdown heading. | P3
+PLANE TOUCHDOWN PITCH DEGREES / BANK DEGREES | degrees | Attitude at last touchdown; optional analysis. | P3
+CONTACT POINT IS ON GROUND:index | bool | Contact-specific ground state; index 0-19; depends on contact-point model. [MS6] | P2
+CONTACT POINT COMPRESSION:index | position | Potential bounce/contact analysis; highly aircraft-dependent. [MS6] | P3
+GEAR IS ON GROUND:index | bool | Indexed gear contact; treat as supporting signal, not definitive aircraft-independent truth. [MS6] | P2
+G FORCE | G | Current G rather than touchdown-impact G. Requires sampling/time association; not a guaranteed impact metric. [MS7] | P3
+
+TAXI, BRAKES, ENGINE AND PARKING
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+EXACT SIMVAR | SDK UNIT | USE / QUALIFIER | PR
+BRAKE PARKING POSITION | bool | Parking brake lever state; does not prove block movement. [MS6] | P2
+BRAKE PARKING INDICATOR | bool | Parking brake indicator, corroborating only. [MS6] | P3
+GENERAL ENG COMBUSTION:index | bool | Per-engine running/combustion candidate; especially validate on custom PMDG systems. [MS8] | P2
+NUMBER OF ENGINES | number | Engine index/count; verify on intended aircraft before using to drive indexed requests. [MS8] | P2
+ATC ON PARKING SPOT | bool | Simulator ATC parking context, not physical block-time certainty. [MS3] | P3
+
+WEIGHT, PAYLOAD STATIONS AND FUEL — OPTIONAL ENRICHMENT
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+EXACT SIMVAR | SDK UNIT | USE / IMPORTANT LIMITATION | PR
+TOTAL WEIGHT | pounds | Simulated total weight; not directly cargo or payload. [MS7] | P3
+EMPTY WEIGHT | pounds | Empty aircraft weight reference; cannot safely infer baggage/freight split. [MS7] | P3
+MAX GROSS WEIGHT | pounds | Aircraft weight context; not required for Logbook core. [MS7] | P3
+PAYLOAD STATION COUNT | number | Number of defined stations (SDK notes 1-15). [MS9] | P3
+PAYLOAD STATION NAME:index | string | Station label may be human-readable but is not a universal cargo taxonomy. [MS9] | P3
+PAYLOAD STATION WEIGHT:index | pounds | Payload station weights; cannot assume each is PAX, crew, baggage or freight. [MS9] | P3
+FUEL TOTAL QUANTITY WEIGHT | pounds | Fuel context; legacy/modular fuel-system caveats; not core logging. [MS10] | P3
+NEW FUEL SYSTEM | bool | Identify legacy versus modern fuel-system implementation. [MS10] | P3
+
+INTERNAL / EXTERNAL OUTPUTS — DO NOT REQUEST AS RAW SIMVARS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+OUTPUT / SAVED FIELD | LOGIC / DATA SOURCE | STATUS
+Flight identifier, original date, from/to ICAO | Correlate observed position with airport reference data or manual/import source; confirm ambiguous airports. | INT / EXT
+Flight phases; takeoff and touchdown counts | Derived from time-ordered state and transition logic; handling of rejected takeoff/circuits remains open. | INT
+Off-block, takeoff, touchdown, on-block, block/airborne times | Derived after owner agrees on semantics, pause policy, simulator-rate policy and event completeness. | INT
+Distance and flight path | From position samples with teleport/slew and gap handling; choose bounding/accuracy policy. | INT
+Landing rate / G-force at touchdown | Derived from validated last-touchdown and time-aligned supporting telemetry; not guaranteed. | INT
+Provenance, validity, gap and correction audit | Record time, provider, canonical units, raw observed versus derived versus edited, missing/stale state and original values. | INT
+Confirmed diversion + planned/actual destination | Only show once pilot confirms (or manually marks); planning alternates from optional source, never UI clutter otherwise. | INT / EXT
+PAX / crew / baggage / freight / payload | Pilot-entry or supported source; source weight measurements do not imply those categories. | EXT / INT
+Dashboard/Statistics aggregates | Compute from historical persisted records, on demand; no extra live SimConnect subscription just for totals. | INT
+
+CRITICAL MEANINGS AND RESEARCH RISKS
+- PLANE TOUCHDOWN NORMAL VELOCITY: last touchdown velocity along ground normal, reportedly ft/s; |ft/s| × 60 may yield an absolute ft/min magnitude, but the actual sign, freshness, event association, bounce handling and compatibility need live validation. Do not assign an old touchdown reading to a new landing, treat VS as impact velocity or advertise touchdown G without evidence.
+- TITLE/ATC TYPE/ATC MODEL/ATC ID and ATC FLIGHT NUMBER do not guarantee a canonical aircraft type, registration or VATSIM callsign; allow pilot correction. Aircraft-livery strings must not change aircraft-type grouping.
+- Latitude/longitude and ground state are observations, not authoritative origin/destination ICAO or completed flight phases. Airport matching needs an approved reference/manual confirmation and ambiguity handling.
+- Parking-brake released / engine running / moving / parking spot are separate signals, not automatically OFF BLOCK or ON BLOCK.
+- ZULU TIME, ABSOLUTE TIME, SIMULATION TIME, SIMULATION RATE, application UTC receipt time and monotonic host time answer different questions. Rules for pauses, Active Pause, sim acceleration and credited flight time remain UNAPPROVED.
+- SimConnect payload stations do NOT categorise actual crew, PAX, baggage and freight or justify arbitrary person-weight assumptions. Pilot-entered or trusted import data may be necessary; incomplete totals should never appear as precise actuals.
+- No high-rate always-on flight-track recorder, touchdown sampling frequency, arbitrary aircraft plugin transport or raw telemetry retention duration is authorised.
+
+CORE-TO-RECORDER QUALITY / SUBSCRIPTION INVESTIGATION (NOT SELECTED)
+- Proposed value metadata: canonical name/type/unit, original source/provider, simulator UTC/context plus host receipt/monotonic time, data/session timestamp, availability/freshness (LIVE, STALE, UNAVAILABLE under field-specific tolerance), and gap/change/capability flags. Keep observed, derived, edited and imported provenance separate.
+- Candidate subscription behaviour: identity on load/change; movement and event context at a justifiable low overhead cadence; event-correlation or short landing-window burst only if proven needed; engine/parking/weight lower priority and on-demand; keep essential Recorder data supplied when minimised but reduce visual-only updates.
+- Proposed Core recovery: report stale/unavailable observations, gaps, aircraft/session changes, pause and adapter capability/failure; no silent interpolation of missing flight facts. Recorder controls persisted log state and recovery.
+- Specific rates, callback/dispatch strategy, freshness thresholds, exact contract and queue/back-pressure mechanisms remain open.
+
+INITIAL PMDG 737 FEASIBILITY SCOPE — NO PLUGIN IMPLEMENTATION
+- Check the ACTUAL installed official/licensed PMDG 737 SDK against the secondary mirrored NG3 header. PMDG_NG3_Data and EnableDataBroadcast=1 appear in the mirror but are UNVERIFIED for the relevant installed version. Do not assume landing metrics, PAX/cargo split, system data, permission or configuration availability.
+- Compare to standard SimConnect needs only; optional vendor adapter cannot be required for generic Flight Logging. Assess active data availability, freshness, generic fallback, security/licensing, device/performance impact.
+- Fenix, iniBuilds and other manufacturers are deferred from initial aircraft-specific research, not ruled out from the future design.
+
+BEFORE ANY FIELD IS APPROVED FOR C0.1, RECORD EVIDENCE
+Requirement, pilot/Recorder consumer, why used, optional/essential status,
+source, simulator/aircraft/build, unit and type, sampling/event observation,
+normal/paused/Active Pause behaviour, freshness/quality, error/reconnect,
+minimised need, legal/SDK constraints, measured performance and test status.
+Acceptance criteria require owner review after research. No runtime or
+simulator test has yet been performed.
+
+PUBLISHED DOCUMENTATION LINKS FROM THE LOGBOOK HANDOFF (NOT RUNTIME PROOF)
+[MS1] https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Aircraft_SimVars/Aircraft_Misc_Variables.htm
+[MS2] https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Miscellaneous_Variables.htm
+[MS3] https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Aircraft_SimVars/Aircraft_RadioNavigation_Variables.htm
+[MS4] https://docs.flightsimulator.com/html/Programming_Tools/Environment_Variables.htm
+[MS5] https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Events_And_Data/SimConnect_SubscribeToSystemEvent.htm
+[MS6] https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Aircraft_SimVars/Aircraft_Brake_Landing_Gear_Variables.htm
+[MS7] https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Aircraft_SimVars/Aircraft_FlightModel_Variables.htm
+[MS8] https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Aircraft_SimVars/Aircraft_Engine_Variables.htm
+[MS9] https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Aircraft_SimVars/Aircraft_System_Variables.htm
+[MS10] https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Aircraft_SimVars/Aircraft_Fuel_Variables.htm
+[MS11] https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Structures_And_Enumerations/SIMCONNECT_CLIENT_DATA_PERIOD.htm
+[MS12] https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/API_Reference/Structures_And_Enumerations/SIMCONNECT_PERIOD.htm
+[PM1] https://github.com/Norbert801/PMDG-MCP/blob/main/PMDG_NG3_SDK.h
+
+SOURCE / CHANGE HISTORY
+2026-11-23 — v0.3:
+Preserved all original SC-001–SC-016 items, source-governance rules and v0.1–v0.2 history; incorporated the Logbook's 23 Nov detailed Microsoft SDK research candidates with exact names/units/priority qualifiers, event/derived/external distinctions, PMDG 737-only investigation, quality/fallback and validation evidence needs. No exact C0.1 minimum, SDK mapping, sampling cadence or implementation/testing approved.
+
+
+CURRENT CORE/RECORDER DATA EVIDENCE — 23 NOVEMBER 2026 (v0.4)
+------------------------------------------------------------
+STATUS: No actual MSFS 2020 SimVar, SDK aircraft telemetry, event payload,
+landing rate, timer/phase transition, cadence or aircraft addon data has yet
+been observed or validated through a LIVE current-project SimConnect session.
+This research candidate matrix remains in force; no P1/P2/P3 classification
+is silently converted into implementation acceptance.
+
+Codex source and bounded Windows evidence:
+- The R3.1 Black Box Core generic interfaces and simulated numeric/string
+  path passed the 31-case guarded offline test suite; stale-generation
+  callbacks, freshness of received observations, gap/status handling and
+  demand fanout were tested against a FAKE wrapper.
+- The supplied simconnect-H 0.7.2 wheel successfully imported on Windows
+  and closed-client registration/signature checks passed without DLL.
+- A separate SDK DLL load resolved the wrapper's 12 declared exports. This
+  DOES NOT prove any particular SimVar name, aircraft support, cadence or
+  touchdown value works in the simulator.
+- A live wrapper preflight was blocked by missing imports in v0.7.2
+  client.py, so NO live source samples, Flight Recorder events, phase
+  decisions, start/stop rules, touchdown measurements or performance values
+  are available. All flight data examples remain unverified.
+- The wrapper callback represents PYTHON RECEIPT time; do not infer the
+  simulator sample time or treat delayed packets as reliably instantaneous.
+  A high-level one-second period is NOT a verified landing-sampling method.
+- Independent invalidation and fake-wrapper freshness are valuable evidence
+  for the Core contracts, but the Recorder must still handle paused/stale/
+  interrupted source data and distinguish observed, derived and edited.
+
+Migration and next evidence gate:
+- The owner ordered an implementation HALT and Codex project migration.
+  This document is a complete replacement candidate; no automatic Source
+  promotion, further tests, subscription rates, accepted fields or plugin
+  implementation have been authorised by the document update.
+- After separately approved loader correction and genuine local MSFS 2020
+  sampling, evaluate each essential variable with actual name, unit/type,
+  source quality, session/aircraft, pause/slew/reload behaviour, cadence,
+  performance and Recorder consumer. Owner approval still determines the
+  minimum C0.1 data contract and flight-event semantics.
+- PMDG 737 is an earlier research-only candidate; aircraft/add-on plugins
+  remain PARKED. Generic SimConnect fallback must not rely on vendor data.
+
+SOURCE / CHANGE HISTORY
+2026-11-23 — v0.4: Preserved all SC-001–SC-016 and candidate variable/event
+research; distinguished simulated 31/31 Core tests, real Windows wheel
+API/DLL-load probes and failed live loader preflight from actual telemetry.
+Recorded the migration freeze; no field, landing rate or sampling cadence
+has been validated in a live simulator.

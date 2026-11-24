@@ -1,0 +1,110 @@
+# Simulator session state and event offline verification
+
+24 November 2026, Windows CPython 3.12.14 x64.
+
+**PASS.** 58 cases passed, including nine new session state and notification tests. The runner recorded zero guard violations. It used an in-memory fake SDK. No DLL was loaded and no MSFS session was opened.
+
+The tests cover all five named state requests, demand-driven and shared refreshes, response typing and freshness, malformed packets, request errors and deadlines, disconnect, typed filename, pause, weather, frame, object and mission event payloads, shared event suspension, and aircraft input invalidation through the shared lifecycle notification. ABI layout and both new function declarations were checked against the installed MSFS 2020 SDK header. The adapter now declares 27 functions. The earlier load-only test resolved 13. Native packets, filename encoding, simulator timing, and runtime availability remain pending.
+
+## Reproduce from the workspace root
+
+```powershell
+$bbcPython='C:/Program Files/WindowsApps/OpenAI.CodexPrimaryRuntime.v26-1119-907-0_26.1119.907.0_x64__3k8sg7r9htsxt/dependencies/python/python.exe'
+$bbcRunner=@'
+import ctypes, faulthandler, pathlib, struct, sys, unittest
+
+blocked = []
+def guard(event, args):
+    if (event == "ctypes.dlopen"
+            or event.startswith(("socket.", "subprocess.", "os.spawn", "os.exec"))
+            or event in ("os.system", "os.startfile", "_winapi.CreateProcess")
+            or (event == "import" and args[0].split(".")[0] == "simconnect_native")):
+        blocked.append(event)
+        raise RuntimeError("Offline guard blocked " + event)
+
+sys.addaudithook(guard)
+root = pathlib.Path.cwd()
+sys.path.insert(0, str(root))
+print(f"CPython {sys.version.split()[0]} {struct.calcsize('P') * 8}-bit", flush=True)
+faulthandler.dump_traceback_later(15, exit=True)
+try:
+    suite = unittest.defaultTestLoader.discover(str(root / "tests"), pattern="test_*_offline.py")
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    print(f"Offline guard violations: {len(blocked)}", flush=True)
+finally:
+    faulthandler.cancel_dump_traceback_later()
+raise SystemExit(0 if result.testsRun and result.wasSuccessful() and not blocked else 1)
+'@
+& $bbcPython -I -B -c $bbcRunner
+exit $LASTEXITCODE
+```
+
+## Captured output
+
+```text
+CPython 3.12.14 64-bit
+test_a_load_packet_behind_the_drain_limit_prevents_a_stale_input_write (test_aircraft_inputs_offline.AircraftInputOfflineTests.test_a_load_packet_behind_the_drain_limit_prevents_a_stale_input_write) ... ok
+test_aircraft_reload_invalidates_old_handles_and_unconfirmed_writes (test_aircraft_inputs_offline.AircraftInputOfflineTests.test_aircraft_reload_invalidates_old_handles_and_unconfirmed_writes) ... ok
+test_async_set_exception_reports_rejected_without_closing_session (test_aircraft_inputs_offline.AircraftInputOfflineTests.test_async_set_exception_reports_rejected_without_closing_session) ... ok
+test_delayed_hash_only_parameters_cannot_validate_a_replacement_aircraft (test_aircraft_inputs_offline.AircraftInputOfflineTests.test_delayed_hash_only_parameters_cannot_validate_a_replacement_aircraft) ... ok
+test_discovery_is_opt_in_and_assembles_multipart_pages (test_aircraft_inputs_offline.AircraftInputOfflineTests.test_discovery_is_opt_in_and_assembles_multipart_pages) ... ok
+test_incomplete_catalog_times_out_without_publishing_partial_results (test_aircraft_inputs_offline.AircraftInputOfflineTests.test_incomplete_catalog_times_out_without_publishing_partial_results) ... ok
+test_reads_fixed_text_and_rejects_a_malformed_value (test_aircraft_inputs_offline.AircraftInputOfflineTests.test_reads_fixed_text_and_rejects_a_malformed_value) ... ok
+test_shares_subscriptions_primes_with_get_and_releases_on_last_consumer (test_aircraft_inputs_offline.AircraftInputOfflineTests.test_shares_subscriptions_primes_with_get_and_releases_on_last_consumer) ... ok
+test_write_uses_current_schema_and_the_full_64_bit_hash (test_aircraft_inputs_offline.AircraftInputOfflineTests.test_write_uses_current_schema_and_the_full_64_bit_hash) ... ok
+test_create_once_for_two_regions_and_keep_sdk_area_after_disconnect (test_client_data_offline.ClientDataOfflineTests.test_create_once_for_two_regions_and_keep_sdk_area_after_disconnect) ... ok
+test_failed_create_isolated_and_sdk_write_exception_reported (test_client_data_offline.ClientDataOfflineTests.test_failed_create_isolated_and_sdk_write_exception_reported) ... ok
+test_mismatched_readback_times_out_without_write_replay (test_client_data_offline.ClientDataOfflineTests.test_mismatched_readback_times_out_without_write_replay) ... ok
+test_permissions_and_bounds_prevent_writes (test_client_data_offline.ClientDataOfflineTests.test_permissions_and_bounds_prevent_writes) ... ok
+test_read_timeout_and_truncated_packet_survive_and_allow_explicit_refresh (test_client_data_offline.ClientDataOfflineTests.test_read_timeout_and_truncated_packet_survive_and_allow_explicit_refresh) ... ok
+test_reconnect_invalidates_baseline_and_remaps_once_for_new_handle (test_client_data_offline.ClientDataOfflineTests.test_reconnect_invalidates_baseline_and_remaps_once_for_new_handle) ... ok
+test_shared_subscription_initial_read_refresh_and_final_retirement (test_client_data_offline.ClientDataOfflineTests.test_shared_subscription_initial_read_refresh_and_final_retirement) ... ok
+test_tagged_write_preserves_binary_bytes_and_adjacent_bytes (test_client_data_offline.ClientDataOfflineTests.test_tagged_write_preserves_binary_bytes_and_adjacent_bytes) ... ok
+test_command_access_and_arguments_are_checked_without_provider_dispatch (test_core_offline.CoreOfflineTests.test_command_access_and_arguments_are_checked_without_provider_dispatch) ... ok
+test_consumer_gap_is_explicit_and_does_not_affect_another_consumer (test_core_offline.CoreOfflineTests.test_consumer_gap_is_explicit_and_does_not_affect_another_consumer) ... ok
+test_delayed_reading_from_previous_session_is_ignored (test_core_offline.CoreOfflineTests.test_delayed_reading_from_previous_session_is_ignored) ... ok
+test_disconnect_discards_old_values_and_keeps_subscription_on_reconnect (test_core_offline.CoreOfflineTests.test_disconnect_discards_old_values_and_keeps_subscription_on_reconnect) ... ok
+test_disconnect_marks_sent_command_uncertain_and_does_not_replay_it (test_core_offline.CoreOfflineTests.test_disconnect_marks_sent_command_uncertain_and_does_not_replay_it) ... ok
+test_radio_tune_and_swap_report_accepted_sent_and_confirmed (test_core_offline.CoreOfflineTests.test_radio_tune_and_swap_report_accepted_sent_and_confirmed) ... ok
+test_send_failure_blocks_writes_but_leaves_telemetry_usable (test_core_offline.CoreOfflineTests.test_send_failure_blocks_writes_but_leaves_telemetry_usable) ... ok
+test_stale_read_retains_timestamp_and_emits_one_stale_update (test_core_offline.CoreOfflineTests.test_stale_read_retains_timestamp_and_emits_one_stale_update) ... ok
+test_trusted_raw_diagnostics_share_the_named_subscription (test_core_offline.CoreOfflineTests.test_trusted_raw_diagnostics_share_the_named_subscription) ... ok
+test_two_consumers_share_provider_demand_and_can_leave_independently (test_core_offline.CoreOfflineTests.test_two_consumers_share_provider_demand_and_can_leave_independently) ... ok
+test_unresolved_cleanup_blocks_opening_a_new_session (test_core_offline.CoreOfflineTests.test_unresolved_cleanup_blocks_opening_a_new_session) ... ok
+test_initial_signatures_match_the_header (test_simconnect_abi_offline.SimConnectAbiOfflineTests.test_initial_signatures_match_the_header) ... ok
+test_packed_receive_structures_match_header_field_offsets (test_simconnect_abi_offline.SimConnectAbiOfflineTests.test_packed_receive_structures_match_header_field_offsets) ... ok
+test_x64_windows_types_and_initial_enum_values (test_simconnect_abi_offline.SimConnectAbiOfflineTests.test_x64_windows_types_and_initial_enum_values) ... ok
+test_correlated_native_exception_reports_rejected_write (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_correlated_native_exception_reports_rejected_write) ... ok
+test_diagnostics_accepts_indexed_simvars_but_not_other_variable_namespaces (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_diagnostics_accepts_indexed_simvars_but_not_other_variable_namespaces) ... ok
+test_extended_event_argument_schema_and_dispatch_without_readback (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_extended_event_argument_schema_and_dispatch_without_readback) ... ok
+test_extended_event_correlates_an_async_rejection (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_extended_event_correlates_an_async_rejection) ... ok
+test_invalid_signal_exception_does_not_break_another_read (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_invalid_signal_exception_does_not_break_another_read) ... ok
+test_missing_swap_baseline_and_invalid_frequency_prevent_transmission (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_missing_swap_baseline_and_invalid_frequency_prevent_transmission) ... ok
+test_numeric_fixed_width_text_and_pause_packets (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_numeric_fixed_width_text_and_pause_packets) ... ok
+test_open_requires_confirmation_and_close_retires_handle (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_open_requires_confirmation_and_close_retires_handle) ... ok
+test_open_uses_the_sdk_local_only_config_constant (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_open_uses_the_sdk_local_only_config_constant) ... ok
+test_quit_marks_command_uncertain_and_failed_close_blocks_reconnect (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_quit_marks_command_uncertain_and_failed_close_blocks_reconnect) ... ok
+test_readback_exception_leaves_telemetry_running (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_readback_exception_leaves_telemetry_running) ... ok
+test_shared_subscription_retires_only_after_last_consumer (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_shared_subscription_retires_only_after_last_consumer) ... ok
+test_startup_quit_and_open_timeout_leave_no_handle (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_startup_quit_and_open_timeout_leave_no_handle) ... ok
+test_truncated_known_packet_ends_session_cleanly (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_truncated_known_packet_ends_session_cleanly) ... ok
+test_tune_and_swap_use_one_shot_readback_without_a_telemetry_subscription (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_tune_and_swap_use_one_shot_readback_without_a_telemetry_subscription) ... ok
+test_writable_simvar_rejects_invalid_values_and_reports_readback_mismatch (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_writable_simvar_rejects_invalid_values_and_reports_readback_mismatch) ... ok
+test_writable_simvar_sends_one_typed_element_and_confirms_against_readback (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_writable_simvar_sends_one_typed_element_and_confirms_against_readback) ... ok
+test_wrong_readback_times_out_without_resending_command (test_simconnect_provider_offline.SimConnectProviderOfflineTests.test_wrong_readback_times_out_without_resending_command) ... ok
+test_bad_event_type_and_sdk_registration_failure_report_gaps (test_simulator_session_offline.SimulatorSessionOfflineTests.test_bad_event_type_and_sdk_registration_failure_report_gaps) ... ok
+test_event_payloads_preserve_pause_flags_filenames_and_metrics (test_simulator_session_offline.SimulatorSessionOfflineTests.test_event_payloads_preserve_pause_flags_filenames_and_metrics) ... ok
+test_five_documented_states_are_typed_allow_empty_plan_and_no_polling (test_simulator_session_offline.SimulatorSessionOfflineTests.test_five_documented_states_are_typed_allow_empty_plan_and_no_polling) ... ok
+test_last_enabled_consumer_controls_shared_native_delivery (test_simulator_session_offline.SimulatorSessionOfflineTests.test_last_enabled_consumer_controls_shared_native_delivery) ... ok
+test_mission_action_preserves_guid_and_rejects_unterminated_payload (test_simulator_session_offline.SimulatorSessionOfflineTests.test_mission_action_preserves_guid_and_rejects_unterminated_payload) ... ok
+test_pending_state_does_not_populate_new_session (test_simulator_session_offline.SimulatorSessionOfflineTests.test_pending_state_does_not_populate_new_session) ... ok
+test_public_load_event_shares_aircraft_input_lifecycle_watch (test_simulator_session_offline.SimulatorSessionOfflineTests.test_public_load_event_shares_aircraft_input_lifecycle_watch) ... ok
+test_reject_timeout_invalid_payload_and_recovery_are_local_to_state (test_simulator_session_offline.SimulatorSessionOfflineTests.test_reject_timeout_invalid_payload_and_recovery_are_local_to_state) ... ok
+test_shares_state_requests_and_refreshes_and_uses_configured_age (test_simulator_session_offline.SimulatorSessionOfflineTests.test_shares_state_requests_and_refreshes_and_uses_configured_age) ... ok
+
+----------------------------------------------------------------------
+Ran 58 tests in 0.026s
+
+OK
+Offline guard violations: 0
+```

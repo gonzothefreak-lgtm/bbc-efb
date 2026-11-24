@@ -1,0 +1,832 @@
+BBC INTEGRATED EFB — DEVELOPMENT CHAT REGISTER
+Version: 1.10
+Established: 17 November 2026
+Updated: 23 November 2026
+Status: MIGRATION FREEZE — three historical specialist chat records; Codex transfer pending owner confirmation
+
+PURPOSE
+This register identifies specialist ChatGPT development conversations, their responsibilities, related documents, and cross-workstream handoffs. It is a coordination aid, not an automatic messaging system: decisions made in one chat must be documented and explicitly handed off to another chat when relevant.
+
+DOCUMENT MANAGEMENT — NEW PROJECT
+- The sole designated active masters are individual documents in the NEW
+  ChatGPT Project's Sources section.
+- Treat the older ChatGPT Library and earlier Project as history only.
+- Revise a document by reading its current Project Source, preparing a complete
+  replacement file, and asking the owner to replace the existing attachment.
+- The replacement is not authoritative until the owner confirms the upload.
+- Keep only ONE active copy per master in Project Sources; store backups
+  outside the active Sources list. Do not create numbered duplicate masters.
+- Discover new Project Sources as the project expands; this list is not fixed.
+- Update the register as new specialist chats are created or their scope changes.
+
+CURRENT CHAT REGISTER STATE — NEW PROJECT
+The project owner created a NEW ChatGPT Project named:
+  BBC Integrated workstation and EFB for VATSIM
+Six initial master documents are available in Project > Sources. The owner
+has confirmed that THREE development chats are now established:
+  - Main Development Chat
+  - Black Box Core Dev (same existing chat; UI rename owner-confirmed 22 November 2026)
+  - Logbook Page Dev (confirmed active 20 November 2026)
+These are current NEW-Project workstreams. Previous-Project conversations
+remain historical references and are not assumed to be automatically
+accessible from any new chat.
+
+HISTORICAL WORKSTREAMS FROM THE PREVIOUS PROJECT (REFERENCE ONLY)
+1. Previous main EFB development / UI
+   Old chat title: ! Main thread workstation build
+   Old responsibilities: Architecture, UI, concept builds C0.1–C0.3,
+   main project decisions and coordination. NOT the new implementation baseline.
+2. Previous SimConnect integration research
+   Old chat title: Not verified (called "Sim connect" in conversation)
+   Old responsibilities: MSFS 2020/2024 integration research, shared telemetry,
+   diagnostics, aircraft adapters, requirements. Designs transferred via
+   the current SimConnect and Aircraft Plugin Project Sources.
+
+ACTIVE NEW-PROJECT WORKSTREAMS — OWNER-CONFIRMED
+1. Main Development Chat
+   Status: ACTIVE — established in the NEW Project.
+   Responsibilities: Overall EFB/workstation architecture, development
+   environment and UI-framework evaluation, user interface and workspace
+   design, integration coordination, application-level decisions and future
+   owner-authorised development/build planning.
+   Primary Project Sources: BBC_EFB_Project_Development_Record.txt and
+   BBC_EFB_Development_Chat_Register.txt. Consult specialist master records
+   for approved SimConnect, data and plugin decisions.
+   Handoffs: Send simulator-data and diagnostic/UI contract requirements to
+   Black Box Core Dev; receive technical feasibility and data-quality
+   findings before finalising dependent UI or logbook behaviour.
+
+2. Black Box Core Dev
+   Status: ACTIVE — established in the NEW Project.
+   Responsibilities: MSFS 2020-first SimConnect research and design;
+   separately evaluate MSFS 2024; simulator connection/recovery,
+   demand-driven shared telemetry, data quality, aircraft identification,
+   flight-logging telemetry requirements, performance/connection diagnostics
+   and optional aircraft-specific integration research.
+   Primary Project Sources: BBC_EFB_SimConnect_Integration_Development_Record.txt,
+   BBC_EFB_SimConnect_Data_Requirements_Register.txt and
+   BBC_EFB_Aircraft_Plugin_Development_Framework.txt. Also consult the
+   Project Development Record and this Chat Register.
+   Handoffs: Receive Logbook data/event needs for technical feasibility; return
+   findings on variable mappings, quality, cadence and simulator overhead to
+   Logbook Page Dev and Main Development Chat via documented handoffs.
+
+3. Logbook Page Dev
+   Status: ACTIVE — created and owner-confirmed 20 November 2026.
+   Responsibilities: Logbook interface, pilot recording workflows, timing and
+   event definitions, flight data/record fields, manual entries, flight history,
+   statistics, local persistence, backups, recovery and C0.1 Logbook design.
+   Primary Project Sources: BBC_EFB_Project_Development_Record.txt and
+   BBC_EFB_Development_Chat_Register.txt. Consult SimConnect Integration and
+   Data Requirements Sources for approved telemetry constraints. No dedicated
+   Logbook master has yet been designated or added to Project Sources.
+   Handoffs: Provide proposed data, events, timing and quality requirements to
+   Black Box Core Dev for mapping/validation and eventual updates to
+   its Data Requirements Register; return shared UI shell, storage conventions,
+   integration needs and proposed C0.1 scope to Main Development Chat.
+   Design research only: no code, simulator testing or build authorisation.
+
+All three chats coordinate through current Project Sources and documented
+handoffs. No chat has guaranteed complete live access to other transcripts.
+Register additional specialist chats only after the owner establishes them.
+
+PLANNED / POTENTIAL WORKSTREAMS (NOT CONFIRMED CHAT THREADS)
+- Aircraft-specific plugins: PMDG, Fenix, aircraft identification and optional aircraft telemetry adapters.
+- VATSIM network integration: controllers, traffic and network data.
+- vPilot integration: supported communications and external integration research.
+- Dispatch / SimBrief: flight plans, OFP and dispatch workflow.
+- Weather: METAR, TAF, Active Sky and weather displays.
+- Hoppie ACARS / CPDLC: datalink messaging research and workflows.
+- Navigation and charts: chart access and navigation resources.
+Create register entries only when actual dedicated chats are established.
+
+
+LOGBOOK PAGE DEV WORKSTREAM — CONFIRMED ACTIVE 20 NOVEMBER 2026
+---------------------------------------------------------------
+Date proposed: 18 November 2026
+Owner-confirmed chat title: Logbook Page Dev
+Status: ACTIVE — confirmed by the project owner on 20 November 2026.
+This is an active DESIGN chat, NOT an implemented application module.
+Responsibilities:
+- Design the Logbook workspace, flight list/details, searches, statistics,
+  flight recording controls and automated/manual recording requirements.
+- Define local record schema, JSON/JSONL persistence, CSV export, backup,
+  crash/disconnection recovery and appropriate audit/correction behaviour.
+- Specify actual SimConnect/derived-data needs, event timing, pause handling,
+  freshness, sampling and continued flight logging while minimised.
+- Prepare design findings and requirements for owner review; do not code or
+  alter shared application architecture independently.
+Main Development Chat receives UI/architecture/storage and C0.1 scope handoffs.
+Black Box Core Dev receives telemetry/event requirements for its Data
+Requirements Register; technical mapping, cadence and simulator impact remain
+with that specialist workstream. Both must follow the current Project Sources.
+Initial 20 November 2026 catch-up completed using the six available
+Sources. The chat proposed a history-first Logbook layout with a compact
+current-flight area, but the owner has NOT approved that layout or recording
+mode. Its preliminary SimConnect candidate-data handoff has been drafted,
+NOT sent to the SimConnect workstream or approved as a final telemetry schema.
+Technical mappings, sampling and flight-event feasibility remain unverified.
+
+PROJECT-WIDE CLEAN BUILD AND PERFORMANCE HANDOFF — 18 NOVEMBER 2026
+------------------------------------------------------------------
+Origin: Main Development Chat / project owner
+Destination: All active and future specialist development workstreams
+Status: OWNER-APPROVED project-wide release and design policy, NOT implemented
+Authoritative detail: BBC_EFB_Project_Development_Record.txt, sections 16-18
+
+Approved direction:
+- Every future EFB build contains the complete established application shell:
+  Dispatch, In-Flight and Logbook, plus Settings access and the permanent
+  bottom SimConnect indicator as part of the interface design. Non-functional
+  modules may use clearly labelled placeholders; never misrepresent mock data.
+- First NEW-Project C0.1 is intended to focus on a functioning Logbook using
+  MSFS 2020 SimConnect telemetry inside the full shell. Exact Logbook events,
+  controls, data model, acceptance criteria and technology choices still need
+  design/approval. This is not build authorisation.
+- Before implementing new features, review whole-application structure,
+  integrate/refactor deliberately, remove redundant or stale workarounds,
+  and avoid duplicate connections, background loops and UI update services.
+- Deliver the COMPLETE independently buildable EFB source tree on each
+  authorised release; regenerate build outputs cleanly. Reuse sound code;
+  do not rebuild a feature by layering ad-hoc patches or needlessly rewrite
+  all correct modules. Archive prior releases and record test evidence.
+- Review CPU, RAM, GPU, background activity, SimConnect subscription rates,
+  disk usage and simulator FPS/frame-time impact for each release; compare
+  repeatable benchmarks with prior versions and simulator-only baseline.
+  Existing numeric targets remain provisional and unverified.
+- Failure/recovery, reliable flight logs and modest simulator overhead take
+  priority over UI effects or unnecessary work. Keep inactive placeholders
+  lightweight. Distinguish proposed / approved / implemented / tested.
+
+Handoff actions:
+- Main Development Chat: maintain policy, define C0.1 integration and
+  test/release checks, and approve architecture after discussion with owner.
+- Black Box Core Dev: apply shared-telemetry/performance constraints,
+  advise on Logbook data and evidence; no unilateral changes to technical
+  SimConnect decisions are made by this register.
+- Logbook Page Dev: design the Logbook to fit the full EFB shell and
+  prepare data/event requirements for Black Box Core Dev validation
+  before an approved register update; do not assume proposals are verified.
+- ALL workstreams: independently assess CPU, RAM, GPU, background/disk work
+  and simulator FPS/frame-time impact WITHIN THEIR OWN SCOPE. SimConnect is
+  not the sole owner of application performance; Main coordinates whole-EFB
+  integration and release-level regression measurement.
+
+PROJECT CHAT ROUTING — OWNER-APPROVED RULE (18 NOVEMBER 2026)
+-------------------------------------------------------------
+The Main Development Chat is the project-wide coordination hub. Every
+existing and future specialist chat should help keep substantive decisions
+and design work in the correct workstream, even if the owner accidentally
+raises a topic in another chat.
+
+Routing by current ownership:
+- Main Development Chat: application architecture, whole-EFB UI shell,
+  framework and environment selection, cross-chat coordination, shared
+  policies, release/build planning and topics without an active owner.
+- Black Box Core Dev: simulator connectivity, telemetry feasibility,
+  subscription cadence, data freshness, simulator connection/performance
+  diagnostics and optional aircraft-adapter technical research.
+- Logbook Page Dev (ACTIVE): Logbook-specific user experience, flight
+  recording workflow, record schema, history and statistics; cross-workstream
+  architecture and shared storage policies remain with Main.
+- As new chats are owner-confirmed and registered, use their approved scopes
+  for routing; never guess that an unregistered chat exists.
+
+Operating procedure for any receiving chat:
+1. Recognise when a substantive request is outside the chat's registered
+   responsibility, and briefly explain which chat owns it.
+2. Gently suggest continuing in the correct ACTIVE chat. If cross-cutting,
+   unclear or unassigned, use Main Development Chat as the safe default.
+3. Supply a short, copy-ready handoff with the request, relevant approved
+   constraints, decision status, destination and pending questions. Don't
+   require the owner to remember or reconstruct context.
+4. Keep simple related questions in context when useful, and always
+   honour the project-wide "catch up on project" command in the receiving
+   chat; avoid extended out-of-scope design, duplicate ownership or silently
+   approving changes.
+   If the owner intentionally keeps discussing the issue here, identify the
+   formal owner and document a handoff for any consequential decisions.
+5. Never imply that messages, ownership, approvals or documents have been
+   automatically transferred to another chat. Project Sources only change
+   after the usual complete-replacement and owner-confirmation workflow.
+6. Be friendly and nonjudgmental: this is a coordination safeguard, not a
+   reason to scold the owner for using the wrong conversation.
+
+A concise version of this rule should also appear in the shared Project
+Instructions so every newly created chat receives it at startup. This
+register is the detailed routing reference; the Main Development Chat owns
+maintenance and cross-workstream oversight. No coding/builds authorised.
+
+KNOWN CROSS-CHAT HANDOFFS
+- Aircraft Status panel (approved UI design): coordinate required aircraft identification, altitude, groundspeed, heading, vertical speed, flight phase and telemetry freshness with SimConnect research. These are UI display goals, not a verified SimConnect variable specification.
+- Permanent bottom SimConnect indicator (approved UI design): display connection state across Dispatch, In-Flight and Logbook. Clicking opens Settings > SimConnect > Connection Diagnostics; hover shows relevant connection details. Implementation pending.
+- Logbook telemetry: Logbook Page Dev has proposed aircraft identity, on-ground/altitude/speed, position, pause/time metadata, optional engine/movement state and connection/quality information. These are preliminary investigation candidates, NOT approved data requirements or validated SimConnect mappings. A formal handoff to Black Box Core Dev is pending.
+- Recording status versus simulator connection: treat them as distinct state concepts in future shared UI/status contracts; implementation and exact interfaces remain undecided.
+- Logbook layout: history-first with a compact current-flight area is a design suggestion only, not an approved C0.1 page specification.
+
+HANDOFF TEMPLATE
+Date:
+Originating chat / workstream:
+Receiving chat / workstream:
+Feature or decision:
+Required information or action:
+Status (proposed / approved / implemented / tested):
+Relevant Project Source document(s):
+Outstanding questions:
+Owner acknowledgement / follow-up:
+
+RULES
+- No application source code, application build or release ZIP without explicit project-owner authorisation.
+- Never claim work has been implemented or tested merely because a design was approved.
+- The register is not an exhaustive record of project decisions: refer to each workstream's designated master documentation.
+- If a cross-chat decision is important, update the appropriate master document and prepare a handoff summary; do not assume other chats have automatically read it.
+- Preserve a shareable, credential-free project history.
+
+NEXT MAINTENANCE ACTIONS
+- Keep all THREE active chat entries, responsibilities, designated Sources
+  and cross-chat handoffs current.
+- Obtain agreed Logbook recording rules and pilot workflow requirements before
+  submitting technical data requirements to Black Box Core Dev.
+- Check for a dedicated Logbook master if the owner chooses to add one; do not
+  presume a new Source exists merely because a chat is active.
+- Register additional dedicated chats only when they are actually established.
+- Revisit this register when new Project Source masters, approved decisions
+  or workstream dependencies are established.
+
+PERFORMANCE PRIORITY HANDOFF — 17 NOVEMBER 2026
+Origin: Main EFB workstation/UI development
+Destination: Black Box Core Dev (active NEW-Project workstream)
+Status: Approved project-wide design priority; technical implementation pending
+Requirement: Keep simulator FPS/frame-time impact minimal. Demand-driven
+shared subscriptions, efficient polling/cadence, low background overhead,
+continued essential flight logging when minimised, bounded buffers and
+diagnostics for connection/telemetry activity. Evaluate CPU/RAM/GPU and
+simulator FPS/frame-time impact, including spikes, on representative hardware.
+Provisional EFB targets: idle CPU <1%, normal average CPU <3%, RAM <300 MB,
+no consistently measurable simulator degradation. These are not verified
+performance results or fixed acceptance criteria.
+Related document: BBC_EFB_Project_Development_Record.txt, section 13.
+Historical handoff result: SimConnect v0.3 incorporated performance,
+diagnostics and UI data requirements; current v0.4 retains them. The active
+Black Box Core Dev owns follow-up research; no implementation claimed.
+UI coordination: Proposed Settings > Performance Diagnostics area; clickable
+bottom SimConnect status indicator opens connection diagnostics.
+
+
+STANDARD CROSS-CHAT SYNCHRONISATION COMMAND — 17 NOVEMBER 2026
+----------------------------------------------------------
+Trigger: When the project owner types "catch up on project" in ANY BBC
+Integrated EFB development chat (case-insensitive; equivalent punctuation
+or spacing is acceptable), perform a read-only project context refresh.
+
+Protocol:
+1. Review current project instructions and the designated latest master
+   Project Development Record. Locate the current Chat Register.
+2. Discover all current Project > Sources documents. Do not treat any static
+   list as exhaustive. Prefer those over old Library counterparts.
+3. Review this chat's ownership, its specialist master documents and relevant
+   cross-chat handoffs. Use accessible recent chat context where available,
+   but do not claim full automatic access to other chats' transcripts.
+4. Compare approved decisions, proposed ideas, open questions, changes,
+   implemented features, test results and dependencies with this chat's
+   previously known state. Distinguish confirmed from uncertain information.
+5. Report a concise, dated briefing: what changed; what affects THIS chat;
+   pending handoffs/actions; contradictions requiring owner clarification.
+6. Adopt the verified latest decisions as working context for subsequent
+   conversation. Do not silently override approved decisions or infer that
+   documentation updates prove implementation or testing.
+7. If document maintenance is needed, use the current Source to prepare a
+   complete replacement. Have the owner replace it in Project > Sources and
+   confirm success. Store backups outside active Sources. Do not modify
+   other workstreams' technical decisions without owner approval. The phrase alone does not authorise source code changes,
+   application builds, or release packages.
+
+Limitations: Sync is ON DEMAND, not a continuous background feed. It cannot
+force chat-to-chat messages or update Project Source attachments automatically.
+This register does not guarantee another chat loaded it. Clearly identify any
+missing source, inaccessible older chat or uncertain revision. The sync command
+alone does not authorise changes to Source attachments, application code or builds.
+
+Recommended output heading: "Project catch-up — [date]".
+
+HISTORICAL LIBRARY MASTER LOCATION — SUPERSEDED BY NEW PROJECT SOURCES
+-------------------------------------------------------------------
+In the OLD Project, the SimConnect v0.3 document was copied to the old
+Library root because protected attachments could not be overwritten.
+That path is NO LONGER an active master for this NEW Project.
+The currently authoritative record is the separately uploaded file named
+BBC_EFB_SimConnect_Integration_Development_Record.txt in the NEW Project's
+Sources section, following owner confirmation.
+
+NEW PROJECT SOURCE DOCUMENT REGISTER — INITIAL SET
+- BBC_EFB_Project_Development_Record.txt — main design/decisions/history
+- BBC_EFB_Development_Chat_Register.txt — chats and cross-chat handoffs
+- BBC_EFB_SimConnect_Integration_Development_Record.txt — SimConnect design
+- BBC_EFB_SimConnect_Data_Requirements_Register.txt — telemetry needs
+- BBC_EFB_Aircraft_Plugin_Development_Framework.txt — plugin research
+- VATSIM_Integrated_Pilot_Workstation_Project_Master_Prompt.txt — original
+  foundational prompt; preserve unchanged
+New sources may be added; keep this register current. Do not assume a copy
+outside Project > Sources is authoritative.
+
+NEW PROJECT APPLICATION BASELINE
+No active build or inherited application source. Old C0.1–C0.3 are history.
+First authorised NEW Project build will be called C0.1. No code/builds yet.
+
+BLACK BOX CORE — 22 NOVEMBER 2026 ARCHITECTURE AND WORKSTREAM HANDOFF
+------------------------------------------------------------------------
+Origin: Main Development Chat and owner-supplied 22 November handoff.
+Status: Core and distinct Flight Recorder high-level architecture APPROVED.
+Owner explicitly DIRECTED existing SimConnect Integration Chat be renamed
+'Black Box Core Dev' and broadened within the boundaries below. The actual
+ChatGPT UI rename must be completed and confirmed by owner; the document does
+not claim the UI title has already changed. No implementation/test approval.
+
+CURRENT WORKSTREAM IDENTITY
+- Three ACTIVE workstreams: Main Development Chat, Black Box Core Dev
+  (formerly SimConnect Integration Chat; SAME CONTINUING conversation) and
+  Logbook Page Dev. Do NOT create a fourth chat or parallel technical owner.
+- Earlier references to 'SimConnect Integration Chat' in historical sections,
+  revision history or original specialist filenames refer to the same
+  continuing workstream and remain valid provenance.
+- 'Black Box Core' is the subsystem, 'Black Box Core Dev' is the specialist
+  chat, and 'SimConnect' retains its Microsoft interface/technical meaning.
+- The three existing SimConnect, telemetry and plugin master filenames remain
+  unchanged until separate, approved specialist document maintenance.
+
+ARCHITECTURAL ROLES — AGREED HIGH-LEVEL DIRECTION
+- Black Box Core is the EFB's logical central shared-information subsystem.
+  Its stable/versioned internal consumer interfaces should allow updates to
+  simulator and other provider adapters without rewriting unaffected modules
+  when compatibility is maintained. Do not presume independently replaceable
+  executables or a mandatory IPC/server deployment.
+- The existing shared, consumer-driven SIMULATOR connection/distribution
+  approach stays within the Core concept. No duplicate SimConnect manager.
+- Black Box Flight Recorder remains a DISTINCT consumer/component for flight
+  event detection, recording state, data integrity and recovered flight
+  records; it is not the only route through which the EFB can access live
+  data. The Logbook team owns recorder requirements and pilot UX.
+- Main Development Chat owns application-level Core architecture, shared
+  data contracts, boundaries, future network-hosting policy, UI integration,
+  release planning and cross-chat approval coordination.
+- Black Box Core Dev retains simulator-side technical
+  responsibilities and is owner-directed to research Core provider
+  interfaces, future network/client-host technical research, hardware
+  interfaces, secure communication and diagnostic feasibility, with detailed
+  technical designs remaining subject to research, Main coordination and
+  owner approval. It does NOT
+  silently take ownership of all third-party APIs or other specialist chats.
+- Logbook Page Dev retains ownership of recording/timing/events, record
+  lifecycle, recovery, storage and Logbook/In-Flight recorder presentation.
+  Submit its data requirements to the simulator/Core specialist for research.
+- ALL workstreams own security and performance within their own scope.
+
+LOCAL COMMUNICATION AND FUTURE NETWORKING
+- C0.1 remains a single-computer, local-first application with the complete
+  EFB shell and intended SimConnect-backed Logbook. A lightweight in-process
+  interface may be sufficient; separate process, native Windows IPC and
+  localhost transport are UNSELECTED implementation alternatives.
+- Black Box Core is the FUTURE architectural home for optional network
+  hosting and client-facing shared-data APIs. These are not C0.1 features.
+- No inbound internet, default LAN listener, public Core endpoint, remote
+  administration, UPnP or router auto-forwarding in initial operation.
+  Outbound authorised VATSIM/SimBrief/other API connections remain possible.
+- Proposed external access later needs opt-in, security assessment, device
+  permissions, credentials, network exposure controls, protocol/transport
+  choices and simulator-performance safeguards. A loopback listener does not
+  itself confer authentication, and plugin import is not a sandbox.
+- Future home-cockpit networking and optional external clients are deferred;
+  illustrative AUD $5 monetisation is NOT approved. No essential security
+  protection may be tied to a future optional payment model.
+
+SPECIALIST DOCUMENTS / REQUIRED HANDOFFS
+- BBC_EFB_SimConnect_Integration_Development_Record.txt v0.5 now records
+  approved Core modularity; Q1–Q15 and simulator technical ownership remain. No change to its
+  technical rules authorised by this register.
+- BBC_EFB_SimConnect_Data_Requirements_Register.txt v0.2 remains a working
+  requirements register; do not invent fields/mappings or a transport schema.
+- BBC_EFB_Aircraft_Plugin_Development_Framework.txt v0.3 retains safety,
+  trust, fallback and plugin constraints. No external loader authorised.
+- Main will hand off the expanded Core scope and security/local-network
+  research to Black Box Core Dev, and the recorder/Core
+  boundary to Logbook Page Dev. Independent specialist record revisions
+  should follow specialist review and owner authorisation.
+- Keep both permanent bottom SIMCONNECT connection indicator and distinct
+  FLIGHT RECORDING status concepts. Future Core health indicators are a
+  separate UI proposal; do not silently replace the approved SimConnect UI.
+
+PENDING OWNER DECISIONS
+- Owner to complete/confirm the existing chat's UI rename to 'Black Box Core
+  Dev' and paste its revised scope handoff.
+- Define the detailed technical boundary of Core provider services after
+  specialist research; Main retains shared architecture and policy approval.
+- Research later whether Core/EFB must be in separate processes and whether
+  a local transport or API should be made public; no default network server.
+- Coordinate approved Core contracts with Logbook, simulator and future
+  workstreams before selecting technology.
+
+REVISION HISTORY
+2026-11-17 — v1.1: Replaced old Library governance with NEW Project Sources,
+marked previous chat threads and builds historical, added expandable new
+Project source and thread registers. No application code changed.
+2026-11-17 — v1.2: Registered Main Development Chat and SimConnect Integration
+Chat as active NEW-Project workstreams; recorded responsibilities, primary
+Sources and cross-chat handoffs; updated stale chat-status/maintenance wording
+and SimConnect v0.4 reference. Preserved governance, historic records,
+performance handoffs, catch-up protocol and fresh C0.1 baseline.
+Documentation only; no application source or build changed.
+
+2026-11-18 — v1.3: Documented the planned (not yet active) Logbook Page
+Dev chat and its proposed handoffs; communicated approved whole-EFB
+shell, clean release discipline and performance regression policy to
+all workstreams. Added owner-approved scope routing, Main Development
+Chat coordination default and copy-ready wrong-chat handoffs. Two existing
+chats remain ACTIVE; Logbook Page Dev is PLANNED. No code/build.
+
+2026-11-20 — v1.4: Registered owner-confirmed Logbook Page Dev as third ACTIVE
+NEW-Project chat; updated active/planned lists, chat ownership, routing,
+coordination and pending Logbook-SimConnect handoffs. Recorded that the
+history-first page and candidate telemetry list are PROPOSALS, not approvals.
+Clarified each chat owns performance impact within its scope, with Main
+coordinating whole-EFB regression checks. Existing SimConnect Q1–Q15,
+clean-build policy, historical entries and approved project requirements
+unchanged. Documentation only; no application code/build/test authorised.
+
+2026-11-22 — v1.5 (REPLACEMENT FOR OWNER REVIEW): Recorded approved high-level
+Black Box Core and distinct Flight Recorder architecture, and owner direction
+to rename existing SimConnect Integration Chat to 'Black Box Core Dev' while
+retaining that SAME workstream. Actual UI rename pending owner confirmation.
+Coordinated cybersecurity, local-first C0.1 and future optional networking;
+retained all earlier decisions, specialist ownership, Q1–Q15 and history.
+No application code, tests or builds.
+
+
+CURRENT COORDINATION UPDATE — 22 NOVEMBER 2026 (v1.6)
+---------------------------------------------------
+Status: Owner-directed development-workflow correction and reconciliation
+of two complete specialist handoffs. THIS section describes the current
+state if older historical entries appear to describe a pending UI rename,
+previous specialist versions, or a proposed handoff.
+
+ACTIVE WORKSTREAMS — CONFIRMED
+- Main Development Chat: ACTIVE; final cross-workstream coordination,
+  architecture, shared application UI, framework, technology, acceptance
+  and release planning; not the default destination for every minor idea.
+- Black Box Core Dev: ACTIVE; the SAME former SimConnect Integration Chat;
+  owner confirmed it has been renamed, and the expanded charter is received.
+  Research simulator/source adapters, Core data distribution, quality,
+  diagnostics, reliability/security/performance and technical feasibility.
+- Logbook Page Dev: ACTIVE; paused briefly for 22 November handoff
+  reconciliation, but may resume design when the owner wishes. Owns
+  the ENTIRE Logbook function and UI/UX,
+  as well as the separate Flight Recorder's data/event, workflow, record,
+  recovery, history, statistics and persistence requirements. Pilot-visible
+  information and interface design are one connected design responsibility.
+
+SPECIALIST SOURCE STATUS / HANDOFF RECONCILIATION
+- Project Development Record v1.5 and SimConnect Integration Record v0.5
+  were provided in the current Sources set; owner confirmation of their
+  replacements is reported in the Black Box Core Dev handoff. Current
+  replacement versions are v1.6 (Project Record) and v1.6 (this Register),
+  supplied as full replacements. As always, Source authority begins
+  only after owner confirms replacement; this dated note is not a
+  permanent claim that the upload remains pending.
+- SimConnect Data Requirements Register v0.2 and Aircraft Plugin Framework
+  v0.3 remain unchanged. Original Project Master Prompt remains unchanged.
+- Logbook Page Dev's 22 November comprehensive handoff was received by Main:
+  notable candidate features include freight manifests, deliveries and
+  multi-sector freight assignments; inclusive GA, airline, helicopter,
+  charter, bush and specialist aviation; history, statistics, journals,
+  detailed telemetry/analysis; and several unselected layouts. Freight is a
+  strong owner interest, NOT an approved C0.1 feature set. See Project
+  Development Record section 22 for the inventory and approval boundaries.
+- Black Box Core Dev's 22 November comprehensive handoff was received by
+  Main: all major APPROVED Core principles already documented; proposed
+  C0.1 technical/test work remains research only. See Project Development
+  Record section 23. Its detailed Logbook requirements request was drafted,
+  NOT confirmed delivered or satisfied, and cannot be treated as approved
+  telemetry specifications. Core must not force Logbook to select layouts or
+  recording semantics simply to perform general technical research.
+
+DEVELOPMENT-FIRST WORKFLOW — OWNER-DIRECTED AND PROJECT-WIDE
+1. WHEN ASKED TO DESIGN, DESIGN. Start useful work within the specialist
+   scope without requiring catch-up, new paperwork, a handoff, a complete
+   requirements specification or administration beforehand.
+2. DON'T RE-LITIGATE APPROVED DECISIONS unless the owner requests it or a
+   specific new finding/contradiction genuinely requires review; explain
+   that exact issue rather than restarting the whole project.
+3. DON'T BLOCK ON UNRELATED UNDECIDED DETAILS. Explore UI and functionality
+   together where relevant. Make practical proposals; ask one essential
+   decision at a time rather than launching long questionnaires.
+4. NO HANDOFF PING-PONG. Record genuine cross-chat dependencies briefly and
+   continue independent work. Escalate to Main only when shared architecture,
+   common contracts, release scope or a real ownership conflict requires it.
+   Existing chats and handoffs do not sync automatically.
+5. MILESTONE-BASED SOURCE MAINTENANCE. Consolidate ordinary design decisions
+   when an agreed milestone, implementation-readiness review, material
+   conflict or explicit owner request makes it worthwhile. Preserve complete
+   master replacement and confirmation workflow for actual revisions.
+6. CATCH-UP IS ON-DEMAND. Perform the documented read-only procedure when
+   the owner asks for 'catch up on project'; do NOT force it after each
+   handoff or at the start of every development discussion.
+7. REPORT HONEST STATUS: proposed/owner interest/approved/implemented/tested
+   are distinct. No code, simulator testing or build without explicit owner
+   authorisation. No forced new chat, forced file or unnecessary admin.
+These rules REPLACE any reading of earlier coordination language that made
+routine handoffs or Source rewrites a prerequisite to ordinary development;
+they do NOT supersede the existing critical design/safety/build guardrails.
+
+SINGLE NEXT COORDINATION DEPENDENCY (NOT A STOP-WORK ORDER)
+Logbook will progressively define what to record/display and when, as it
+co-designs the interface. When specific C0.1 data/event needs are mature,
+Black Box Core Dev validates feasibility, mapping, shared subscription
+cadence and freshness. Main reviews shared contracts and complete-shell
+integration. This dependency does not prevent ongoing Logbook design or
+Core SDK/connection research. No C0.1 feature list is inferred as approved.
+
+REVISION HISTORY ADDENDUM
+2026-11-22 — v1.6:
+Confirmed current status of Black Box Core Dev rename, consolidated both
+specialist handoffs into existing workstreams, documented the Logbook's full
+UI/UX ownership, and introduced owner-directed development-first rules to
+prevent redundant catch-ups, redecisions and handoff loops. Updated Core
+record reference v0.5 and pointed to Project Record sections 22–24 for
+feature inventory and reconciliation. Preserved all prior workstream,
+Source, safety, performance, C0.1 and change-history content. Documentation
+only; no code, tests or builds.
+
+
+CURRENT MASTER SOURCE / WORKSTREAM UPDATE — 22 NOVEMBER 2026 (v1.7)
+-----------------------------------------------------------------
+Status: Main Development documentation consolidation, subject to owner
+review and confirmation of manual Source replacement. This updates live
+coordination facts; all prior revision history is retained above.
+
+ADDITIONAL PROJECT SOURCE MASTERS PROPOSED FOR OWNER UPLOAD
+- BBC_EFB_Logbook_Design_Record.docx — v1.0: one illustrated LOGBOOK master
+  combining the complete Q1-Q7 and Q8-Q14 specialist handoffs, with a
+  current decision/status index and intact original supporting visuals.
+  Owned substantively by Logbook Page Dev; Main handles Source revision.
+- BBC_EFB_UI_Design_Standards.docx — v1.0: shared EFB shell, visual style,
+  terminology, layouts, status/footer, Settings, aircraft artwork, responsive
+  design and approval-status reference. Main owns shared UI architecture.
+These are NEW source names, not replacements for the original six. They
+become authoritative only after the owner confirms adding them to Sources.
+Do not also add the two old standalone handoff DOCX files as active masters;
+retain those as history if useful, avoiding duplicate active design records.
+Existing SimConnect Integration Record v0.5, Data Requirements Register
+v0.2, Aircraft Plugin Framework v0.3 and founding Master Prompt remain
+unchanged by this update. Official Club logo ZIP and the designated Logbook
+Dashboard concept image are reference ASSETS, not competing master records.
+
+WORKSTREAMS — RESPONSIBILITIES UNCHANGED
+- MAIN DEVELOPMENT CHAT manages ALL Project Source replacement preparation,
+  project-wide UI/architecture, common statuses, Settings, common layout
+  system, artwork resources and release integration. Consolidate meaningful
+  handoffs without rerunning completed Q1-Q14 Logbook decisions.
+- LOGBOOK PAGE DEV owns Logbook UI/UX, Flight Logging / distinct Black Box
+  Flight Recorder rules, saved records, editing, gaps, statistics and flight
+  integrity. Q1-Q14 directions are in the new unified Logbook master.
+  Flight Recorder timing, events, pause/recovery and exact C0.1 scope remain
+  for further specialist design; no Main clearance step is needed before
+  ordinary work. No specialist Source replacement should be issued outside
+  the Main-managed workflow.
+- BLACK BOX CORE DEV owns technical Core/simulator/source data feasibility,
+  shared subscriptions, data age/quality, recovery and technical performance.
+  Relevant Logbook telemetry requirements are still preliminary candidates,
+  not a validated SimConnect schema.
+
+LATEST PROJECT-WIDE SHARED UI DECISIONS
+- Shared dark navy/charcoal/blue style from Logbook reference is approved
+  as current house style, with later changes allowed.
+- Use SECTION for Dispatch, In-Flight, Logbook and Settings; PAGE,
+  WORKSPACE, MODULE and PANEL meanings are in the new shared UI master.
+- Shared application-level aircraft type side-profile asset library.
+- One shared configurable layout system for Logbook/In-Flight with distinct
+  saved arrangements and right launcher always accessible; actual resize/
+  launcher collapse behaviour requires concept-build evaluation.
+- Export All Data belongs in Settings > Data Management; separate backups.
+- Dedicated Settings > Flight Logging & Privacy guidance.
+- The common persistent footer carries SIDE-BY-SIDE SIMCONNECT CONNECTION
+  and FLIGHT LOGGING statuses throughout the complete EFB; different Core/
+  Recorder data sources and separately functioning interactions.
+- Approved Logbook page/navigation, editor, operation fields, attention
+  queue, modal details, privacy and logging controls are in the new Logbook
+  master; accepted concepts do not automatically become C0.1 commitments.
+
+SOURCE-PRESERVATION POLICY
+Main alone prepares approved Source revisions after reviewing current master
+contents. The owner alone confirms manual replacement. Preserve content not
+only at milestones but when substantial new design context risks being lost
+through chat length, resets or handoffs. Do NOT automatically trigger another
+catch-up/handoff because a Source was revised. The current Project Sources
+remain the sole authoritative masters; no application code/build authorised.
+
+REVISION HISTORY ADDENDUM
+2026-11-22 — v1.7:
+Registered two NEW proposed illustrated source masters; recorded Main-only
+Source-replacement responsibility, context-loss preservation exception, the
+owner-confirmed Q1-Q14 design approvals, app-wide dual indicators, Settings,
+shared layout and branding/terminology. Preserved all existing workstreams,
+older records, safety/performance rules and C0.1 status. No code/tests/builds.
+
+
+CURRENT C0.1 HANDOFF AND SOURCE STATE — 23 NOVEMBER 2026 (v1.8)
+-----------------------------------------------------------------------
+Status: Owner-requested coordinated documentation update. No changes to the
+three active workstreams and no automatic chat-to-chat synchronisation.
+
+CURRENT OWNER-CONFIRMED WORKSTREAM STATUS
+- Main Development Chat: complete EFB architecture, shared UI/framework,
+  full-replacement Source maintenance, release/acceptance planning.
+- Black Box Core Dev: read-only MSFS 2020 SimConnect research, optional provider
+  and aircraft adapter feasibility, shared subscriptions, freshness,
+  diagnostics, bounded recovery and technical/performance evidence.
+- Logbook Page Dev: complete Logbook and distinct Black Box Flight Recorder
+  functional design, start/stop/time/event rules, persistence, corrections,
+  incomplete-log recovery, history and UI. Core technical findings inform
+  but do not transfer Recorder ownership.
+
+HANDOFF DELIVERY CONFIRMED — REPLACES OLD "PENDING" SNAPSHOTS
+- Main has received "BBC_EFB_SimConnect_Logbook_Telemetry_Research_Handoff_2026-11-23_v0.1.docx"
+  from Logbook Page Dev. It includes a broad candidate telemetry/event list
+  and PMDG 737 research questions. Logbook's initial research deliverable is
+  RECEIVED; no final approved data schema or recorded flight logic exists.
+- Main has received "BBC_Black_Box_Core_Dev_C01_Handoff_to_Main_2026-11-23.docx"
+  from Black Box Core Dev. Library evaluation, quality states and worker
+  proposals remain UNSELECTED implementation methods.
+- Existing Logbook UI Q1–Q14 approvals stand; avoid another general UI
+  requirements collection. Future coordination should address one concrete
+  C0.1 dependency at a time, not another general handoff loop.
+
+APPROVED PRIORITY, NOT CODING OR BUILD PERMISSION
+- Feature design expansion is temporarily FROZEN while the three workstreams
+  focus on planning the complete NEW C0.1 EFB shell + usable Logbook + real
+  local MSFS 2020 read-only SimConnect-backed Flight Logging.
+- Owner approved evaluating maintained EXISTING PYTHON SIMCONNECT LIBRARIES
+  FIRST with custom/native SDK bindings reserved as the fallback. No package,
+  Python runtime, API binding, SDK worker design or Windows build choice has
+  been selected or tested.
+- SimConnect first does NOT reject FSUIPC7; it remains a potential optional
+  secondary/alternative pending need/benefit evaluation.
+- Initial optional aircraft-specific RESEARCH targets PMDG 737 only; Fenix,
+  iniBuilds and others remain future candidates. No PMDG adapter is included
+  in an approved C0.1 implementation list.
+
+NEW / REVISED MASTER REGISTER AFTER OWNER UPLOAD CONFIRMATION
+  BBC_EFB_Project_Development_Record.txt                 v1.8 (revised)
+  BBC_EFB_Development_Chat_Register.txt                  v1.8 (revised)
+  BBC_EFB_SimConnect_Integration_Development_Record.txt  v0.6 (revised)
+  BBC_EFB_SimConnect_Data_Requirements_Register.txt      v0.3 (revised)
+  BBC_EFB_Aircraft_Plugin_Development_Framework.txt      v0.4 (revised)
+  BBC_EFB_NEW_C0.1_Scope_and_Readiness_Plan.txt           v0.1 (NEW)
+UNCHANGED SOURCES: BBC_EFB_Logbook_Design_Record.docx v1.0;
+BBC_EFB_UI_Design_Standards.docx v1.0; original founding Master Prompt;
+current official club-logo/concept-image reference assets.
+The old 23 November handoffs are supporting research evidence, not new
+competing masters. The six filenames above become ACTIVE only after the
+owner confirms the manual Source update; historical references remain in
+prior sections for traceability.
+
+NEXT COORDINATION POINT (ONE AT A TIME)
+Main should next walk the owner through practical implementation choices
+once the six files are confirmed in Sources. Core can evaluate the existing-
+library approach and advise on documented capabilities; Logbook/owner can
+settle the minimum flight-event/timing behaviours in parallel. Proposed
+methods, performance thresholds, exact C0.1 deliverables and implementation
+permission remain open; do not require generic catch-ups as prerequisites.
+
+REVISION HISTORY ADDENDUM
+2026-11-23 — v1.8:
+Confirmed receipt of the 23 November Logbook telemetry and Core technical
+handoffs; recorded the C0.1 feature freeze and library-first evaluation
+approval with FSUIPC unchanged and PMDG 737 initial research only; registered
+five revised masters and a new C0.1 planning master. Preserved older entries
+and all workstream ownership. No application code, tests or builds.
+
+
+CURRENT MAIN / CORE / LOGBOOK HANDOFF CHECKPOINT — 23 NOVEMBER 2026 (v1.9)
+----------------------------------------------------------------------------
+This is the newest coordination snapshot and supersedes conflicting earlier
+'pending' statements only where an owner decision now exists. Three active
+specialist chats and their responsibilities are UNCHANGED.
+
+OWNER-APPROVED MAIN DEVELOPMENT CHOICES
+- PySide6 + Qt Widgets is the intended Python Windows UI framework,
+  contingent on Windows/licence/packaging/performance verification.
+- C0.1 one modular Python process; from C0.2 onwards the owner targets
+  separate EFB/Core/Recorder processes, with IPC/hosting not yet selected.
+- Responsibility-based app/ui/core/recorder/contracts/storage/assets/tests/
+  build_tools conceptual code organisation; C0.1 interfaces are in-process,
+  documented and event driven with future IPC compatibility in mind.
+- User-selected writable Documents/C: or other data folder on first launch;
+  component data ownership and common safe file utilities; no competing
+  flight-record writers. Actual on-disk schema is not approved.
+- On-demand UI Sections and independent active Core/Recorder work; Dispatch
+  opens by default; hybrid adaptive layout (scroll only when necessary);
+  always-accessible right Modules launcher and two footer statuses.
+- C0.1 basic layout preferences and visibility; C0.2+ full approved layout
+  drag/resize/dock/presets. During active Flight Logging, closing the EFB
+  presents Cancel / Save & Exit and preserves unfinished information.
+- C0.1 portable ZIP delivery with complete source tree; no installer yet.
+- C0.1 Option B: FULL previously approved Logbook Q1–Q14 functional target
+  (except advanced layout deferred to C0.2). Real MSFS 2020 read-only
+  Flight Logging, honest unavailable data and durable records still required.
+  Exact Recorder rules and implementation/acceptance remain open.
+
+BLACK BOX CORE TECHNICAL HANDOFF — IMPLEMENTATION EVIDENCE, NOT RELEASE
+- Independently developed reusable Core with generic approved supported
+  SimVar/system-event request interfaces, shared subscriptions, status,
+  source/quality metadata and bounded recovery; not Logbook-specific.
+- Future controlled write/command path may be supported; NO aircraft
+  control active in C0.1. The owner has explicitly PARKED public/user
+  plugin loader and addon-specific plugin discussion for later.
+- Owner authorised component-SOURCE work (initial Core, simconnect-H
+  adapter and focused source corrections); none constitutes a complete
+  integrated EFB release or live MSFS integration.
+- Current source archive: BBC_EFB_Core_SimConnectH_Adapter_Corrections_SOURCE_2026-11-23.zip.
+  Off-simulator verification report: 3 broker + 5 simulated adapter = 8/8
+  checks passed. Treat as limited preliminary checks, NOT real-library,
+  Windows/MSFS, threading, touchdown or performance validation.
+- simconnect-H v0.7.2 is approved FIRST EVALUATION candidate, NOT selected
+  permanently. The owner added the exact .whl and .tar.gz packages as
+  supporting package files; verify their real API before a selection.
+  Black Box Core Dev owns provider feasibility and can receive ONE focused
+  check request if required; Main coordinates acceptance.
+
+HOLD / NEXT OWNER REVIEW
+1. Inspect received simconnect-H 0.7.2 package and match draft adapter API.
+2. PAUSE, as requested by owner, to discuss actual Windows/MSFS 2020 testing,
+   monitoring and safe, read-only, pilot-controlled diagnostic sharing.
+3. Logbook Dev's outstanding specific Flight Recorder events, timestamps,
+   pause/circuits/multi-leg/recovery rules remain its technical/pilot UX work;
+   do NOT re-request its already supplied 23 November telemetry research.
+4. No broad plugin/addon architecture decision has been taken; its existing
+   research master is untouched in this round.
+5. Complete project Source replacements are prepared by Main and become
+   authoritative only upon manual owner replacement and confirmation.
+No automatic chat sync, system monitor, code-build authorisation or simulator
+validation is implied by this register.
+
+REVISION HISTORY ADDENDUM
+2026-11-23 — v1.9: Recorded approved Q2–Q13 application architecture and
+complete C0.1 Logbook target; separated independently developed Core source
+and limited off-simulator tests from unperformed package/Windows/MSFS checks;
+registered supplied simconnect-H packages and required testing discussion;
+preserved existing chat ownership and historical coordination record.
+
+
+CURRENT OWNER-DIRECTED MIGRATION REGISTER — 23 NOVEMBER 2026 (v1.10)
+------------------------------------------------------------------
+DECISION: The owner is moving the ENTIRE BBC Integrated EFB project to Codex.
+Implementation is HALTED during source preservation and the transfer. The
+owner has authorised an updated batch of full Project Source replacements,
+NOT an application build, native test or unreviewed scope change.
+
+PRIOR CHAT ROLES — RETAINED AS HISTORICAL ACCOUNTABILITY
+- Main Development Chat: whole-EFB architecture, shared UI, documentation,
+  integration and build scope decisions to date.
+- Black Box Core Dev: simulator/provider feasibility, source interfaces,
+  subscription delivery, library and SDK research to date.
+- Logbook Page Dev: complete Logbook Q1-Q14 UI/functionality and Flight
+  Recorder semantics/design to date.
+- Codex Windows workspace: local source review, authorised R3/R3.1 Core
+  corrections, offline simulated testing and bounded library probes.
+These descriptions are historical scope/ownership and do not assert that the
+old chats automatically synchronise, are deleted or will continue leading
+new work after the owner completes the migration.
+
+CURRENT CODEX TECHNICAL HANDOFF
+- Owner-provided package: BBC_EFB_Codex_Work_Package_2026-11-23.zip.
+- Primary candidate: Black Box Core R3.1 source tree; previous R3 and draft
+  Core archives remain evidence, NOT parallel implementation baselines.
+- Latest simulated Windows evidence: 31/31 PASS, no native DLL or simulator.
+- Actual v0.7.2 wheel imported and checked against adapter signatures on
+  Windows without native DLL; SDK DLL loaded separately and 12/12 wrapper
+  exports resolved without invoking SimConnect functions.
+- Real wrapper loader raises NameError for missing imports in
+  simconnect_native/client.py, line 215 with explicit path. Live smoke-test
+  preflight did not connect, and no working Recorder or full EFB exists.
+
+COORDINATION AFTER MIGRATION
+- The owner/Codex will manage the new implementation workspace and future
+  coordination after the owner declares the migration completed. The new
+  Codex team/chat structure, new file authority, build workflow, repository
+  and cutover date are NOT automatically selected by this register.
+- Until owner verification, current ChatGPT Project Source masters remain
+  authoritative. Revised copies in this handoff require review, replacement
+  under the SAME NAMES and owner confirmation; do not create duplicate active
+  masters. Preserve previous versions externally for audit.
+- The FIRST runnable concept's manual-first shell (Option A) versus waiting
+  for automatic logging (Option B) was DISCUSSED, NOT approved. The owner
+  paused before choosing. Preserve the full authorised C0.1 Logbook target.
+- Use project migration handoff and complete replacement Sources rather
+  than running additional three-chat handoff loops. No coding, builds,
+  native/live tests or global decisions without the owner's permission.
+
+REVISION HISTORY ADDENDUM
+2026-11-23 — v1.10: Recorded owner-approved migration and implementation
+freeze; transitioned this register to an historical handover reference;
+logged Codex R3.1 31-case offline evidence, real Windows package/DLL checks,
+loader preflight blocker, first-build A/B still unapproved, and authority/
+cutover conditions. Preserved all v1.9 chat-routing decisions as history.

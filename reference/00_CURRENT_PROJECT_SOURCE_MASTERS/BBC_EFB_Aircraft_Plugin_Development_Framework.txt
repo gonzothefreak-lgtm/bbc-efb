@@ -1,0 +1,197 @@
+BBC INTEGRATED EFB — AIRCRAFT ADD-ON PLUGIN DEVELOPMENT FRAMEWORK
+Version: 0.5 | Date: 2026-11-23 | Status: Proposed design / research — PMDG 737 research focus; no adapter selected
+
+PURPOSE
+Define a future community-extensible aircraft integration mechanism for the BBC Integrated EFB. Users and aircraft developers may eventually install aircraft-specific adapters in an external folder without rebuilding the Windows application. This is a design record, not an implemented plugin API, SDK, or authorization to code.
+
+RELATIONSHIP TO OTHER RECORDS
+Read alongside the Project Master Prompt, BBC EFB Project Development Record, SimConnect Integration Development Record, current source files and CHANGELOG. The simulator connection manager should own platform connections. Aircraft plugins should use a controlled, documented host interface rather than independently opening conflicting simulator connections where avoidable.
+
+1. DESIGN GOALS
+PLUG-001 — Support optional user-installed aircraft integration modules from a directory alongside the packaged executable.
+PLUG-002 — Keep simulator adapters (e.g. MSFS SimConnect) separate from aircraft-specific adapters (e.g. PMDG or Fenix).
+PLUG-003 — Provide a versioned host/plugin contract and capability declarations; preserve standard simulator telemetry if an aircraft plugin is absent or fails.
+PLUG-004 — Make read-only telemetry the initial plugin capability. Design for guarded future command/write requests, but do not enable by default.
+PLUG-005 — Make module installation, enable/disable, diagnostics and compatibility understandable to non-developer users.
+PLUG-006 — Do not execute arbitrary downloaded Python code silently. Security and trust policy must be designed before external plugins are enabled.
+
+2. PROPOSED ON-DISK LAYOUT (ILLUSTRATIVE, NOT IMPLEMENTED)
+BBC_Integrated_EFB/
+  BBC_EFB.exe
+  data/
+  plugins/
+    aircraft/
+      pmdg_737/
+        manifest.json
+        adapter.py
+      fenix_a320/
+        manifest.json
+        adapter.py
+
+Folder names and files are suggestions. Bundled and external plugins may require separate directories and trust rules. The existing local-first storage approach (JSON, JSONL, TXT, CSV) remains unchanged.
+
+3. PROPOSED MANIFEST CONTRACT (FIELDS TO FINALISE)
+Plugin ID, human-readable name, author, version, plugin API version, supported simulator(s), aircraft identity/matching criteria, declared telemetry capabilities, declared command capabilities, required dependencies, permissions, source/support URL, and optional compatibility notes. Manifest metadata is not proof that a plugin is safe or compatible. No concrete schema is approved yet.
+
+4. HOST / PLUGIN INTERFACE (CONCEPTUAL)
+Host: provides connection state, standard telemetry subscription, event delivery, structured diagnostics and a guarded command gateway.
+Plugin: identifies supported aircraft, translates aircraft-specific data to canonical EFB fields, advertises capabilities, handles connection changes and shuts down cleanly.
+Prefer normalized units, timestamps, data-source labels, quality/availability flags, and explicit handling of missing/stale values. Do not overwrite standard telemetry without provenance or precedence rules.
+
+5. DETECTION AND FALLBACK
+Proposed sequence: detect simulator and aircraft; compare against declared match rules; identify compatible enabled plugins; resolve conflicts deterministically; activate selected plugin; fall back to generic SimConnect data when unsupported or unhealthy. Aircraft identification and matching must be tested against actual aircraft packages and variants.
+
+6. SAFETY AND TRUST
+Python modules execute arbitrary code with the application's user privileges if imported in-process. A folder-based loader does not create a sandbox. Consider an explicit installation/enable workflow, signed or verified distributions where practical, source review, permissions disclosure, user confirmation and process isolation for untrusted code. Process isolation improves fault containment but is not by itself a full security sandbox. Do not promise crash isolation for in-process Python plugins. Commands affecting aircraft state require separate opt-in and validation.
+
+7. COMPATIBILITY AND PACKAGING RESEARCH
+Evaluate Python interpreter/runtime availability for user-authored .py modules in a PyInstaller-frozen EXE; third-party dependency installation and isolation; plugin API semantic versioning; MSFS 2020 versus 2024 differences; Windows 10/11; and licensing/redistribution restrictions. A standalone EXE does not automatically guarantee external Python plugins and dependencies can be loaded. Do not choose an implementation until these constraints are tested.
+
+8. AIRCRAFT-SPECIFIC INTEGRATION RESEARCH
+Investigate documented PMDG, Fenix, iniBuilds and other add-on interfaces independently. Standard SimConnect variables/events may be insufficient for custom systems. Do not assume vendor APIs, SDKs, data channels or redistribution permissions exist without verification. Prefer supported official methods and obtain developer permission when required.
+
+9. PROPOSED USER EXPERIENCE
+Settings > Aircraft Plugins: list detected modules, aircraft compatibility, source/author, version, enabled state, requested capabilities, status and errors. Offer a safe way to install/update/remove plugins; never silently auto-execute newly copied scripts. Maintain logs and a recovery mode that disables problematic plugins.
+
+10. DEVELOPMENT / TEST MILESTONES
+P1 — Agree scope, trust model and module format.
+P2 — After authorised NEW C0.1 implementation, audit actual new-project
+     source and PyInstaller packaging constraints; old builds are not a baseline.
+P3 — Design documented host/plugin API and manifest schema.
+P4 — Create a harmless sample read-only adapter and test loading/disable/fallback (only after explicit build authorization).
+P5 — Verify diagnostics, malformed plugins, crashes, timeouts and shutdown.
+P6 — Validate one supported third-party aircraft interface after licensing and compatibility research.
+P7 — Consider guarded write capabilities only after an approved use case and safety review.
+
+11. OPEN DECISIONS
+- Are user-authored Python scripts acceptable, or should the public plugin format use a more constrained interface/process?
+- How should external dependencies be distributed and verified?
+- How are plugins approved/trusted, updated and revoked?
+- How should simultaneous plugins and aircraft variants be prioritized?
+- What is the minimum supported plugin API version and upgrade policy?
+- Which aircraft integration is the first official reference implementation?
+
+STATUS
+All items are proposals unless explicitly recorded as agreed requirements in the conversation. No plugin loader, security boundary, or aircraft-specific integration has been verified. No application source code was changed to create this document.
+
+12. APPROVED AIRCRAFT PLUGIN BEHAVIOUR (2026-11-17)
+The following decisions are approved in the basic SimConnect review, but NOT implemented or tested:
+- Automatic aircraft detection and plugin matching, with a manual override for aircraft variants or ambiguous matches (Q7).
+- Automatic fallback to generic/standard SimConnect telemetry if a plugin is missing, disabled or fails (Q8). Mark plugin-only values unavailable/stale rather than pretending they are live.
+- Consumer-driven telemetry subscriptions shared through the central manager, including background consumers such as stream overlays while the main EFB is minimised (Q3–Q4).
+- Plugin error diagnostics in the dedicated Settings diagnostics panel and structured local logs, with optional detailed troubleshooting (Q10, Q13).
+- Graceful plugin deactivation and shutdown; a faulty plugin must not indefinitely block EFB exit (Q15). This requires isolation/timeouts to be designed and tested.
+- Read-only telemetry is the intended aircraft plugin scope. Do not add general simulator control capabilities. Any vPilot-related command exception requires separate evidence, design and approval.
+
+13. CHANGE LOG ADDENDUM
+2026-11-17 — v0.2: Added approved aircraft-plugin decisions from SimConnect review; external Python plugin execution, safety and packaging remain research tasks. No code changed or plugin tests run.
+
+14. NEW PROJECT SOURCES / FRESH BUILD BASELINE — 17 NOVEMBER 2026
+---------------------------------------------------------------
+The sole active master for this Aircraft Plugin Framework is the file of
+this exact name in the NEW Project's Sources section. Old Library and previous
+Project copies are archival only. For amendments, read the current Project
+Source, prepare a full replacement TXT, and ask the owner to replace that
+attachment manually and confirm it is available. Keep backups outside active
+Sources; never create numbered duplicate masters.
+
+The NEW project begins with no application code or implemented plugin system.
+Previous C0.1–C0.3 are historical concepts, NOT new-project versions. A
+future C0.1 will be created only after explicit owner authorisation. All
+previously documented plugin safety, trust, capability and read-only
+requirements remain design proposals/approved requirements as specifically
+marked; none is an implemented or tested capability.
+
+On "catch up on project", review relevant NEW Project Sources and handoffs
+before assessing or recommending aircraft plugin work.
+
+CHANGE LOG
+2026-11-17 — v0.3: Added Project Sources-only governance and fresh C0.1
+baseline clarification. No aircraft plugin API or application code changed.
+
+
+15. INITIAL AIRCRAFT RESEARCH PRIORITY — PMDG 737 ONLY (23 NOVEMBER 2026)
+------------------------------------------------------------------------
+Status: Owner-directed initial RESEARCH SCOPE. This is NOT selection of an
+aircraft plugin implementation, loader, SDK version, data schema or a C0.1
+feature requirement. The PLUG-001 to PLUG-006 principles and approved
+SimConnect Q7/Q8 fallback behaviour above remain unchanged.
+
+PRIORITISATION
+- The owner requested that PMDG be the FIRST AND ONLY manufacturer for
+  initial aircraft-specific feasibility work, focused on the PMDG 737.
+  Fenix, iniBuilds and other vendor adapters are deferred for later
+  investigation. Future extensibility and detection/fallback still apply.
+- Support of standard SimConnect telemetry in third-party aircraft must be
+  evaluated independently of any vendor SDK. Do not assume all add-on
+  aircraft report the same standard values, and do not make PMDG mandatory
+  for the first logged flight or C0.1 release.
+- The PMDG 737 NG3 SDK header found in secondary research suggests a
+  SimConnect Client Data channel named PMDG_NG3_Data and a configuration
+  switch EnableDataBroadcast=1. These exact names are NOT verified against
+  official installed PMDG products, supported 737 variants, permissions or
+  simulator versions; no silent settings or broadcast changes authorised.
+
+TARGETED PMDG RESEARCH QUESTIONS FOR BLACK BOX CORE DEV
+- Identify exact product family/build and officially supplied, licensed SDK.
+- Verify whether existing SimConnect session can subscribe to supported
+  read-only Client Data without duplicate connections/workers, and whether
+  client data are enabled or require explicit user configuration.
+- Check whether any documented PMDG field adds meaningful value to the
+  Recorder's existing flight detection, touchdown, aircraft identity,
+  parking/engine context, weight or operational requirements. Do not invent
+  landing-rate, cargo categories or aircraft system fields.
+- Assess data type/unit, timestamp/freshness and advertised capabilities,
+  update rates, plugin failure modes and safe generic fallback.
+- Check vendor licence/SDK redistribution, security trust, Windows/MSFS
+  version compatibility, integration maintenance and bounded overhead.
+- Make no implementation or C0.1 inclusion recommendation until evidence
+  shows an actual benefit beyond standard SimConnect and the owner reviews it.
+
+CROSS-REFERENCES / SCOPE LIMITS
+Logbook's 23 Nov supporting telemetry handoff provides the candidate needs;
+SimConnect Data Requirements Register v0.3 contains the research matrix;
+SimConnect Integration Development Record v0.6 coordinates Core methods.
+Do not silently promote the illustrative external plugin directory or
+manifest proposal in sections 2–4 into a current C0.1 design decision.
+Keep standard telemetry in service even if PMDG data are disabled, missing,
+stale or incompatible. No PMDG plugin, addon SDK or simulator test has been
+implemented or run by the current project.
+
+CHANGE LOG
+2026-11-23 — v0.4:
+Added PMDG 737 as the sole initial aircraft-specific RESEARCH target while
+Fenix/iniBuilds/others remain future options. Documented official SDK checks,
+Client Data uncertainty and generic fallback; preserved earlier technical
+and security proposals, owner-approved Q7/Q8 behaviour and revision history.
+No plugins, tests, code or builds authorised.
+
+
+16. CODEX MIGRATION AND AIRCRAFT PLUGIN STATUS — 23 NOVEMBER 2026 (v0.5)
+------------------------------------------------------------------------
+- The owner ordered an immediate implementation halt and migration of the
+  entire EFB project to Codex. Preparation of full replacement source files
+  is approved, but no aircraft/add-on plugin design, code or test is newly
+  authorised by this document update.
+- Earlier PMDG 737 as FIRST aircraft-specific RESEARCH priority (v0.4)
+  remains a historical owner direction, NOT a selected vendor plugin,
+  requirement for NEW C0.1, or reason to block generic MSFS 2020 logging.
+  Plugin architecture, public SDK, PMDG integration and user-loaded modules
+  are deliberately PARKED until a separately approved conversation.
+- Current Core R3.1 is source independent and still evaluated only with
+  generic simconnect-H v0.7.2. Its 31 simulated offline tests and DLL-free
+  Windows library import do not demonstrate native PMDG/Fenix/iniBuilds
+  telemetry. No addon SDK or aircraft plugin has been installed or validated.
+- The wrapper's missing-import loader defect prevents current live MSFS
+  evaluation; do not use that as evidence for or against any vendor API.
+- Preserve future capability detection, vendor optionality, accurate field
+  provenance and safe generic fallback. No external plugin loading or
+  unapproved aircraft settings changes (e.g., SDK broadcasts).
+- Earlier reference to Integration Record v0.6 in section 15 refers to its
+  historical date; the current migration-batch cross-reference is v0.8.
+
+CHANGE LOG
+2026-11-23 — v0.5: Kept entire previous plugin framework and PMDG-only
+research snapshot; recorded Codex migration hold, latest R3.1 simulated
+Core evidence and no native aircraft-specific validation. No plugin
+implementation or new feature decision authorised.

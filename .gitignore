@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+/.concept-deps-*/
+/.env
+/.env.*
+/build/
+/dist/
+*.dll
+*.exe
+*.log
+*.whl
+/Archive/
+/reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_live_readonly_*/
+*.zip

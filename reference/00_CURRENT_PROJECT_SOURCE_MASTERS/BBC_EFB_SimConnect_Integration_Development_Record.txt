@@ -1,0 +1,606 @@
+BBC INTEGRATED EFB — SIMCONNECT INTEGRATION DEVELOPMENT RECORD
+Version: 0.8 | Date: 2026-11-23 | Status: Migration freeze; R3.1 offline-validated source candidate; native live integration BLOCKED
+
+PURPOSE
+Living technical reference for simulator connectivity, aircraft-specific adapters, decisions, research, implementation and verification. Read alongside the Project Master Prompt, BBC EFB Project Development Record, current source and CHANGELOG. This document does not authorize coding or a build.
+
+1. AGREED REQUIREMENTS
+SIM-001 — Bidirectional architecture. Design the simulator interface for both reading telemetry and sending supported commands. Initial milestone is read-only; no command functionality should be enabled without a specific approved use case and safety design.
+SIM-002 — Modular aircraft integration. Aircraft-specific modules (e.g., PMDG, Fenix) should be independently addable without coupling the core EFB to a particular aircraft. Interface methods, licensing, compatibility and availability require research.
+SIM-003 — Separate simulator adapters from aircraft adapters. Simulator adapters manage platform connectivity; aircraft adapters enrich supported aircraft data and may use additional documented interfaces.
+SIM-004 — Start with MSFS 2020; separately test MSFS 2024. Do not assume parity.
+SIM-005 — Keep simulator connectivity isolated from UI modules. Prefer a shared connection manager, standardised telemetry/events, and module subscriptions.
+
+2. PROPOSED ARCHITECTURE — NOT IMPLEMENTED OR APPROVED IN DETAIL
+EFB modules (flight tracker, logbook, dispatch, future systems)
+    <-> Simulator Integration Manager
+        <-> Simulator adapter (initially MSFS SimConnect)
+        <-> Aircraft-specific adapter (optional)
+The manager would own connection state, telemetry distribution, reconnection, diagnostics, capability reporting and validated command dispatch. Modules should fail independently, and standard data should remain available if an add-on adapter is unavailable.
+
+3. INITIAL TELEMETRY CANDIDATES
+Position (latitude/longitude), altitude, indicated and ground speed, heading, vertical speed, on-ground status, engine state, fuel, aircraft identity and simulator connection state. Flight-phase, takeoff, touchdown, flight-time and logbook events may be derived. Landing rate, G-force and payware-specific data need explicit availability/accuracy checks.
+
+4. FUTURE WRITE/COMMAND DESIGN
+Provide a command abstraction but disable aircraft-changing operations initially. Future commands require explicit user-triggered intent where appropriate, supported simulator/aircraft capability checks, validation, timeout/error handling, logging and clear UI feedback. Do not assume all simulation variables are writable or all aircraft respond to standard events.
+
+5. AIRCRAFT MODULE STRATEGY
+Possible adapters: default/general aircraft, PMDG, Fenix, other third-party aircraft. Proposed: capability declaration, aircraft identification, independent enable/disable, fallback to standard telemetry, per-aircraft compatibility matrix. Open decision: bundled modules versus external plugin directory; external code loading requires versioning and security design.
+
+6. PYTHON / SDK RESEARCH TO COMPLETE
+Compare native Microsoft SimConnect SDK access against Python wrappers: supported APIs, Python and Windows compatibility, event/data subscription handling, thread model, error recovery, MSFS 2020/2024 compatibility, licensing, redistribution and PyInstaller packaging. Verify official SDK documentation and each aircraft vendor's published integration options before choosing a library.
+
+7. CURRENT PROJECT EVIDENCE AND UNCERTAINTIES
+HISTORICAL ONLY: The previous Project contained C0.1–C0.3 concept builds
+and a separate main.py snapshot with an MSFSSimConnectAdapter reference.
+Their version relationship and test status were never established. The NEW
+Project does not inherit those builds or source code: there is currently NO
+active implementation. First future authorised build will be NEW C0.1.
+
+8. MILESTONE PROPOSAL
+M1: Establish NEW-Project C0.1 design baseline and supported simulators.
+M2: Select integration method after SDK/wrapper research.
+M3: Test read-only connection and basic telemetry on MSFS 2020.
+M4: Add robust connection states, reconnect handling and diagnostics.
+M5: Validate event detection and local flight logging.
+M6: Test MSFS 2024 independently.
+M7: Research and prototype one aircraft-specific adapter with permission/compatibility review.
+M8: Consider a future guarded write/command use case after approval.
+All milestones remain planned until explicitly authorised, implemented and tested.
+
+9. OPEN DECISIONS
+- Native SDK binding versus maintained Python wrapper.
+- Polling/subscription cadence and threading strategy.
+- Exact telemetry schema and quality flags.
+- External plugin folder versus bundled aircraft modules.
+- Aircraft identification and module activation strategy.
+- Initial diagnostic UI and test criteria.
+
+10. CHANGE / TEST LOG
+2026-11-17 — v0.1: Initial design record created from project instructions, available project development record, source snippets and this SimConnect discussion. No code modified. No simulator testing performed.
+
+RECORD RULES
+Distinguish proposed, implemented and user-verified functionality. Record source/version, simulator version, aircraft, test procedure, results and limitations for each test. Do not create or modify code/builds without explicit owner authorisation.
+
+11. APPROVED BASIC SIMCONNECT DESIGN REVIEW — QUESTIONS 1–15 (2026-11-17)
+All decisions below are APPROVED DESIGN, not implemented or tested. Question 11 was withdrawn as redundant.
+Q1 — Support local and network SimConnect in the architecture; implement local desktop connectivity first. Simulator frame-rate/frame-time impact must be minimised and measured.
+Q2 — User-selectable automatic or manual connection mode; automatic is proposed default. Manual disconnect must suppress automatic reconnection until requested.
+Q3 — Adaptive, consumer-driven telemetry: request only needed data, share subscriptions between modules, use appropriate rates and release/suspend unused requests. Avoid unnecessary definition churn.
+Q4 — Consumer-driven background operation: minimising the main EFB must not stop data needed by logbook, stream overlays, plugins or other active consumers; suspend visual-only updates when unused.
+Scope clarification — EFB is primarily read-only; do not implement general aircraft/system controls. Only consider commands if a verified vPilot-related workflow specifically requires them, subject to explicit approval and supported integration research. This supersedes the broader speculative write capability as an implementation goal.
+Q5 — Detect disconnections, preserve recorded data, mark gaps and stale data, and recover according to automatic/manual mode; use controlled retry/backoff.
+Q6 — Pause-aware telemetry; distinguish ordinary Pause and Active Pause, elapsed wall time, simulation time and flight time; test actual simulator behaviour.
+Q7 — Automatic aircraft detection and matching plugin activation with user manual override; standard telemetry remains fallback.
+Q8 — Aircraft plugin failure triggers safe deactivation, diagnostics and automatic fallback to standard SimConnect telemetry. Genuine crash isolation requires architecture/testing, not exception handling alone.
+Q9 — Full offline EFB operation for features not requiring live simulator data.
+Q10 — Lightweight built-in connection/performance diagnostics accessible from a menu; detailed SimConnect diagnostics in a dedicated Settings panel/menu, not the main flight workspace. Measure subscriptions, rates, data age and EFB overhead; simulator FPS impact requires controlled in-sim tests.
+Q11 — Withdrawn: MSFS provides SimConnect server; EFB client connects under the Q2 mode. No separate server start or redundant service-start option.
+Q12 — Track telemetry age and quality; mark live/stale/unavailable using data-specific thresholds; never present stale data as live.
+Q13 — Structured local diagnostic logs by default, with optional detailed troubleshooting mode, file rotation/retention and performance safeguards. Time-limited debug mode is a recommendation, not a separate approved requirement.
+Q14 — Persist local connection and diagnostics settings; multiple connection profiles reserved for a later phase.
+Q15 — Graceful EFB shutdown: stop new requests, release subscriptions, close SimConnect, flush flight logs and terminate background services; bound shutdown waits to avoid indefinite hangs. Tray operation deferred.
+
+12. PRIORITIES / IMPLEMENTATION BOUNDARIES
+Initial scope: local MSFS 2020, read-only, demand-driven telemetry, reliable connection states, graceful recovery and shutdown. Network connections, MSFS 2024 and multiple profiles are future capabilities requiring separate verification. Plugin failures and telemetry quality must not silently corrupt logbook records or stream overlays. No source changes or live testing were authorised by this review.
+
+13. CHANGE / TEST LOG ADDENDUM
+2026-11-17 — v0.2: Consolidated approved basic SimConnect design review Q1–Q15, with Q11 withdrawn. Design only; no implementation or testing.
+
+
+14. CROSS-CHAT PROJECT CATCH-UP — PERFORMANCE AND DIAGNOSTICS (2026-11-17)
+--------------------------------------------------------------------------
+Source at time of historical review: Project Development Record (sections
+12–14) and Development Chat Register, then read from the OLD Library.
+Current master versions are now held in NEW Project > Sources.
+Status: Approved project-wide design constraints; SimConnect implementation
+and benchmarking NOT authorised, performed or verified.
+
+PERFORMANCE PRINCIPLE
+MSFS receives resource priority. The EFB/SimConnect client should perform
+only work needed by active consumers. Existing approved demand-driven,
+shared telemetry subscriptions (Q3) remain in force, without revision.
+
+SIMCONNECT TECHNICAL IMPLICATIONS / DESIGN REQUIREMENTS
+- Maintain a single central subscription/distribution path where feasible;
+  avoid duplicate requests by panels, logbook, overlays and aircraft plugins.
+- Choose telemetry update cadence by consumer need and data criticality;
+  avoid excessive polling, definition churn and unnecessary background work.
+- When the window is minimised, suppress unused visual updates, but keep
+  essential logging and other active background consumers supplied (Q4).
+- Keep telemetry queues, retry state, diagnostic history and caches bounded;
+  protect UI responsiveness and flight-log integrity under load.
+- Instrument connection state, requested variables, active consumers,
+  update rates, last received age, stale/unavailable counts, reconnect
+  attempts and approximate EFB-side processing overhead. Diagnostic
+  sampling itself must remain lightweight; detailed debug remains opt-in.
+- Measure simulator FPS and frame-time impact with controlled in-sim tests,
+  including frame-time spikes, not just average FPS. No impact is assumed.
+- Maintain graceful disconnect/reconnect and bounded shutdown (Q5, Q15).
+
+PROJECT-WIDE PROVISIONAL PERFORMANCE TARGETS (NOT SIMCONNECT-ONLY BUDGETS)
+  EFB idle CPU: under 1% on reference test PC.
+  EFB normal CPU: under 3% average on reference test PC.
+  EFB RAM: under 300 MB initially.
+  Minimized: CPU as close to idle as practical while preserving logging.
+  Simulator: no consistently measurable FPS/frame-time degradation.
+These are engineering goals, not benchmarks, guarantees or final pass/fail
+criteria. Reference hardware and test methods remain to be agreed.
+
+MAIN UI HANDOFF / DATA CONTRACTS
+- Permanent compact bottom-of-window SimConnect indicator across Dispatch,
+  In-Flight and Logbook: Connecting, Connected, Disconnected, Reconnecting,
+  Error; clickable to Settings > SimConnect > Connection Diagnostics; hover
+  provides simulator identity, connection state and data freshness if known.
+  The connection manager should expose these statuses; UI layout is owned
+  by the main workstation chat.
+- Optional Aircraft Status panel requires aircraft identity, altitude,
+  groundspeed, heading, vertical speed, flight phase and flight-logging
+  status, with live/stale/unavailable quality indicators. These are display
+  requirements, NOT verified SimConnect variable mappings. Track missing
+  telemetry requirements in the Data Requirements Register.
+- Proposed Settings > Performance Diagnostics area should be coordinated
+  with existing dedicated SimConnect connection diagnostics; avoid costly
+  duplicate instrumentation or competing status sources.
+
+RESEARCH / TEST TASKS
+1. Determine which telemetry consumers need what cadence and whether data
+   remains necessary while minimized; update requirements register.
+2. Compare SDK/native access and Python wrappers for low-overhead shared
+   subscriptions, recovery, threading and PyInstaller compatibility.
+3. Define a minimal common status/telemetry-quality interface for UI and
+   logging consumers, without committing to application source code.
+4. Draft reproducible MSFS 2020 benchmark scenarios and representative PC
+   baseline; MSFS 2024 must be verified separately.
+5. Review aircraft-plugin telemetry overhead and failure containment.
+
+CHANGE LOG
+2026-11-17 — v0.3: Cross-chat catch-up incorporated approved performance
+priority, provisional project-wide targets, diagnostics and bottom status
+indicator handoffs. Previous Q1–Q15 decisions preserved. Design only.
+
+15. NEW PROJECT SOURCES / IMPLEMENTATION RESET — 17 NOVEMBER 2026
+-----------------------------------------------------------------
+Status: Documentation governance and fresh project baseline only.
+
+- The authoritative master for this record is the file of this exact name in
+  BBC Integrated workstation and EFB for VATSIM > Sources.
+- Do not use an older Library document, numbered copy or past chat attachment
+  as an active master when the new Project Sources contain the current record.
+- Read the current Project Source first. Prepare a COMPLETE replacement TXT
+  with revision/date and change log for the owner's manual replacement.
+- Owner must confirm successful replacement in Project Sources; chats cannot
+  assume uploading a different Library copy updated the Project attachment.
+- Original approved SimConnect design decisions Q1–Q15 remain preserved,
+  including withdrawn Q11 and primarily read-only implementation scope.
+- OLD Project C0.1–C0.3 and earlier main.py are historical only. NEW Project
+  has no implemented SimConnect integration or application baseline yet.
+- First future owner-authorised NEW Project build will be named C0.1. No
+  source-code development, integration testing or build is authorised here.
+- The catch-up command "catch up on project" must look in Project > Sources
+  first, discover newly added sources and report relevant cross-chat changes.
+
+CHANGE LOG
+2026-11-17 — v0.4: Added authoritative Project Sources policy and new C0.1
+baseline; corrected old implementation evidence. Technical design Q1–Q15
+and v0.3 performance requirements unchanged. Documentation only.
+
+
+16. BLACK BOX CORE MODULAR INTERFACES / OWNER APPROVAL — 22 NOVEMBER 2026
+-----------------------------------------------------------------------
+Status: Approved high-level design principles; specific Core technology,
+contracts, subscription implementation and deployment remain OPEN. This
+record remains the existing SimConnect specialist master by its unchanged
+filename. The specialist chat is now owner-designated Black Box Core Dev;
+the overall EFB product name and Microsoft SimConnect name do not change.
+
+APPROVED SERVICE-LIKE CORE DIRECTION
+- Black Box Core should behave as a logically self-contained shared-
+  information service/subsystem, even if the initial implementation is
+  in-process within the single-computer EFB. This does not authorise a
+  Windows service, separate executable or local server.
+- EFB pages/modules needing shared provider data should obtain it through
+  documented, versioned Core consumer interfaces rather than directly from
+  the simulator or provider implementation. Interfaces should support
+  independently evolving consumer modules with compatible Core capabilities.
+- Keep a centrally managed simulator connection/subscription path; do not
+  introduce a second competing SimConnect manager. Additional providers,
+  where approved, may have distinct legitimate provider-side connections.
+- The Black Box Flight Recorder is a separate Core consumer, owned by
+  Logbook Page Dev, not a universal persistence layer or mandatory gateway
+  for other consumers. Failure in recording should not stop data delivery to
+  healthy EFB modules. Recorder events, records and persistence remain
+  Logbook-owned.
+- Stable interfaces do NOT imply a selected transport, public SDK,
+  separately updatable module binaries or permanent absence of Core changes.
+
+APPROVED EXPANDABLE SUBSCRIPTIONS — DESIGN DETAILS TO WORK THROUGH
+- New and existing consumers should request data as their needs evolve,
+  and compatible requests should share source subscriptions where practical.
+- Do not collect every available simulator variable just in case; preserve
+  Q3/Q4 demand-driven activation, appropriate update rates, minimised
+  essential-background behaviour and reasonable provider overhead.
+- Research/decide later: request and release lifecycle; consumer registration;
+  how overlapping data/rate needs are reconciled; quality/freshness and
+  provenance exposure; source capability discovery; data-change/version
+  compatibility; slow-consumer isolation; queue/back-pressure limits;
+  disconnection/re-subscription behaviour; diagnostics and test criteria.
+- These details are NOT yet an approved implementation specification.
+  Actual variable mappings and Logbook flight-data needs remain candidates
+  until verified and reviewed with Logbook Page Dev and Main.
+
+APPROVED INDEPENDENT MODULE DEVELOPMENT
+- Keep shared Core contracts separate from each module's own logic, UI,
+  recording rules and storage decisions. Normal evolution of an existing
+  page/module should not require redesigning the Core or unrelated modules.
+- New underlying data capabilities may require controlled Core/adapter
+  extensions, preserving compatible consumers where feasible.
+- Main Development Chat retains approval of shared system boundaries,
+  interface contracts, hosting/packaging and cross-workstream decisions.
+
+PARKED FUTURE IDEAS — NOT C0.1 REQUIREMENTS
+- Independent installation/update packaging for individual EFB modules.
+- Public developer SDK/third-party Core consumer APIs.
+- Independent Core executable or Windows service; separate process/IPC or
+  localhost transport (research alternatives, not required for C0.1).
+- Optional LAN/multi-PC Core hosting, remote clients and hardware interfaces.
+This deferral does not change established future network SimConnect research
+or aircraft plugin safety requirements. No initial public listener, LAN/
+internet service by default, UPnP, port forwarding or remote administration.
+Never infer security from localhost alone or plugin folders; security and
+simulator-performance obligations apply to each workstream within scope.
+
+C0.1 AND DOCUMENT-COORDINATION BOUNDARIES
+- Initial C0.1 remains local-first, one Windows PC, read-only MSFS 2020
+  SimConnect, complete EFB shell and intended functional Logbook after
+  detailed C0.1 recording and integration requirements are approved.
+- Q1–Q15 (Q11 withdrawn), approved data-quality/recovery rules and existing
+  performance requirements remain in force. MSFS 2024 requires separate tests.
+- BBC_EFB_SimConnect_Data_Requirements_Register.txt v0.2 remains unchanged:
+  no unverified SimConnect variables, schema or sampling rates are approved.
+- BBC_EFB_Aircraft_Plugin_Development_Framework.txt v0.3 remains unchanged:
+  proposed external plugin packaging/trust mechanisms are still open.
+- Project-wide design status is coordinated with Main Development Chat; only
+  owner-reviewed complete Source replacements can become authoritative.
+- No application code, implementation test, build, network service or
+  document update in Project Sources is authorised by this design record.
+
+CHANGE LOG
+2026-11-22 — v0.5 (PROPOSED COMPLETE REPLACEMENT FOR OWNER REVIEW):
+Recorded owner approval of service-like Black Box Core, stable internal
+consumer interfaces, expandable shared subscriptions (details open), and
+independent EFB module development; documented explicitly deferred packaging,
+SDK, process and networking options. Preserved SimConnect Q1–Q15, read-only
+initial scope, C0.1 baseline, diagnostics/performance and workstream borders.
+Research/design only; no application code, testing or builds.
+
+
+17. C0.1 PYTHON SIMCONNECT OPTIONS AND LOGBOOK HANDOFF — 23 NOVEMBER 2026
+-----------------------------------------------------------------------
+Status: Research/recommendations only EXCEPT owner-approved evaluation order.
+Technical/SDK claims from specialist handoffs require primary source checks
+and installed Windows/MSFS verification; no application implementation or
+simulator test has occurred.
+
+APPROVED BY OWNER ON 23 NOVEMBER — SPECIFIC, NARROW DECISION
+- EVALUATE AN EXISTING PYTHON LIBRARY FOR THE OFFICIAL MICROSOFT SIMCONNECT API
+  FIRST. Direct Python/native SDK integration (for example ctypes) remains a
+  fallback if wrappers fail the functional, licensing, packaging, maintenance,
+  reliability or simulator-performance checks. This approves the EVALUATION
+  STRATEGY, not the final mechanism or any library/version.
+- First simulator integration remains local/read-only MSFS 2020 with a single
+  shared, consumer-driven Core connection. Do not add a second SimConnect
+  manager, mandatory FSUIPC installation, localhost service or external SDK.
+
+EVALUATION ALTERNATIVES — ALL PACKAGE/IMPLEMENTATION CHOICES UNAPPROVED
+A. Maintained existing Python SimConnect wrapper (FIRST to evaluate):
+   Pros: less native callback/data-management code; faster initial work if
+   SDK functions are covered. Risks: missing events/Client Data APIs,
+   unmaintained wrappers, update lag, packaging issues, third-party licences.
+   Example candidates mentioned in 23 Nov research: pysimconnect (Core
+   reports a 0.3.0/15 Nov 2026 MIT beta release), simconnect-H (mentioned
+   in Main's comparative discussion), and odwdinc/Python-SimConnect
+   (Core reports AGPL-3.0 repository). These release and licence claims are
+   RESEARCH REPORTS, not an approved or project-verified package inventory;
+   resolve conflicting version listings against primary release metadata.
+   Do not choose solely by publication recency. Particularly review the
+   AGPL licence before any integration into distributable EFB software.
+B. Direct Python bindings to the official native SimConnect SDK (FALLBACK):
+   Pros: full control over exposed API surface and binding lifecycle;
+   no dependency on a third-party Python wrapper. Risks: callback/message
+   dispatch, native structs and bitness, error handling, compatibility,
+   packaging, maintenance and greater implementation effort.
+C. Small native C++/C# bridge (OPTIONAL RESEARCH ALTERNATIVE):
+   More languages, build artifacts, interop/process considerations;
+   not selected and not a requirement for C0.1.
+D. FSUIPC7 (SEPARATE SECONDARY/ALTERNATIVE SIMULATOR SOURCE CANDIDATE):
+   Not a SimConnect Python binding. Existing Project Sources preserve it
+   as optional; owner explicitly corrected any suggestion it was excluded.
+   SimConnect is investigated FIRST. No decision to include, reject or
+   require FSUIPC7 in NEW C0.1; assess only if a concrete data/compatibility
+   benefit emerges, with licensing and dependency overhead reviewed.
+
+UNSELECTED CORE TECHNICAL METHODS TO ASSESS
+- Proposed single Core-owned SDK communication/dispatch worker, reflecting
+  research that SimConnect clients are not thread-safe. Threading, queue
+  policies, dispatch rate, native callback handling and UI-thread separation
+  remain implementation options pending owner/Main approval.
+- Proposed SMALL versioned provider-to-consumer contract with three families:
+  (1) consumer registration/shared subscription requests, (2) observation
+  values with named units, source/lineage, sim+host observation times and
+  field-specific quality, (3) connection, pause, reload, gap, aircraft change
+  and capability status events. These are design headings, not approved
+  class names, transport, object schemas, timings or sampling rates.
+- Quality states LIVE, STALE and UNAVAILABLE are already approved as a UI
+  direction (SimConnect Q12). Precise freshness thresholds and session/gap
+  metadata are unapproved technical choices; a healthy paused connection
+  may legitimately carry unchanged observations.
+- When minimised, cancel visual-only consumption rather than essential
+  Recorder data; bound buffers, retry/backoff, diagnostic logs and shutdown.
+  A slow UI consumer must not stall Recorder data delivery.
+
+RECEIVED LOGBOOK TELEMETRY RESEARCH — DATA REGISTRY IS THE HOME
+- Main has received Logbook Page Dev's 8-page 23 November research handoff.
+  The updated SimConnect Data Requirements Register v0.3 contains the
+  candidate SimVars/events and proposed priorities. See that register for
+  exact spellings, reference URLs, native units, source distinctions and
+  validation questions; do not duplicate all candidates in this record.
+- Examples of high-priority TECHNICAL RESEARCH: aircraft type/title;
+  latitude/longitude/altitude, groundspeed, SIM ON GROUND, vertical speed,
+  slew state, simulator times/rate, Pause_EX1, SimStart/SimStop and
+  aircraft/flight load notifications. Candidate values do not constitute
+  a validated automatic flight-event algorithm or approved C0.1 set.
+- PLANE TOUCHDOWN NORMAL VELOCITY is a documented last-touchdown ground-
+  normal velocity candidate. Its update/event association, units/sign,
+  cross-aircraft reliability and stale-value/bounce behaviour need actual
+  validation before it can drive a trustworthy landing rate.
+- Latitude/longitude are not departure/arrival ICAOs; user airport lookup
+  or confirmation may be needed. Payload station weights cannot reliably
+  be relabelled as commercial freight, bags, crew or passenger quantities.
+- Core supplies observations/freshness/source metadata; LOGBOOK owns
+  derived flight phases, start/end criteria, log clocks, touchdown validity,
+  confirmed diversions, recorded fields, persistence, edits and integrity.
+
+PMDG 737-ONLY INITIAL AIRCRAFT RESEARCH — NOT C0.1 PLUGIN APPROVAL
+- Investigate documented/licensed PMDG 737 SDK and supported client data
+  from the actual installed variant. A publicly mirrored NG3 header points
+  to PMDG_NG3_Data and EnableDataBroadcast=1, but may be outdated or
+  incompatible; verify against authorised vendor materials and the actual
+  owner's PMDG aircraft. No blanket claim of enhanced landing data.
+- Preserve automatic detection/manual override and generic SimConnect
+  fallback. Failure/unavailability of optional PMDG Client Data must NOT
+  stop an otherwise supported flight log or corrupt its provenance.
+- Fenix, iniBuilds and other aircraft are deferred from INITIAL detailed
+  aircraft-specific research; general plugin design remains extensible.
+
+VALIDATION PLAN FOR FUTURE EXPLICITLY AUTHORISED WORK — NOT EXECUTED
+- Compare wrapper candidates for SimVar and event API coverage, client data,
+  typed units, connect/disconnect, native callbacks, error recovery,
+  Python/Windows bitness, PyInstaller/DLL loading, licences/redistribution,
+  release activity and support.
+- Start with an identified standard MSFS 2020 aircraft and repeatable events:
+  simulator absent/start, aircraft load/change, taxi, takeoff, landing,
+  bounce/touch-and-go, pause/Active Pause, time-rate changes, slew/reload,
+  disconnect/reconnect, minimised, clean exit and failed consumer.
+- Separately test PMDG 737 only if its SDK/version is verified and its
+  functionality is later authorised. MSFS 2024 compatibility separately.
+- Capture actual CPU/RAM/GPU, disk, subscription traffic, Windows behaviour,
+  simulator FPS AND frame-time spikes versus simulator-only baseline.
+  Document unperformed tests as NOT TESTED; no benchmark goals achieved.
+- No implementation tests, app code or builds authorised by this update.
+
+NEXT MAIN / OWNER DECISIONS (SEQUENTIAL)
+1. Evaluate existing SDK wrappers with a concrete required-capability
+   checklist; then owner chooses a suitable package or approves native fallback.
+2. Agree minimum Recorder flight-event and timing rules with Logbook.
+3. Approve the necessary Core-to-Recorder contract and demand-driven cadence
+   based on those needs and technical findings.
+4. Approve exact C0.1 functional subset and Windows/MSFS acceptance criteria.
+5. Separately authorise any coding, integration tests, builds and release.
+
+CHANGE LOG
+2026-11-23 — v0.6:
+Preserved all prior Q1–Q15/Black Box Core architectural approvals and source
+history; recorded 23 November Logbook telemetry and Core technical handoffs,
+Python existing-library-first evaluation APPROVED as an approach only,
+FSUIPC7 optional status, PMDG 737-only initial research, SDK/data quality
+candidate work and unperformed test status. No implementation, tests/builds.
+
+
+18. GENERAL-PURPOSE CORE / APPROVED TECHNOLOGY DIRECTION — 23 NOVEMBER 2026 (v0.7)
+------------------------------------------------------------------------------------
+This is the CURRENT specialist implementation checkpoint. The earlier
+v0.6 candidate research and Q1–Q15 approvals remain intact; any historical
+statement that no NEW-Project COMPONENT code exists is now superseded.
+There is STILL NO complete C0.1 EFB application or verified live Core.
+
+OWNER-APPROVED ARCHITECTURAL DIRECTION
+- BLACK BOX CORE is independently developable in source and is a reusable
+  provider framework, NOT a Logbook-specific fixed SimVar list. Other EFB
+  modules should request generic supported typed/unit-bearing/indexed
+  SimVars and subscribe to supported SimConnect system events through stable
+  versioned consumer interfaces. A capability registry/probe is a possible
+  implementation detail, not proof any given variable works in every addon.
+- A single source connection/distribution path should share demands, bound
+  queues/caches, propagate source/quality/time metadata and connection gaps,
+  and release visual-only subscriptions when consumers are inactive.
+  'Support many SimVars' never means 'collect all SimVars by default'.
+- Core must remain independent of PySide6, Flight Recorder detection rules,
+  Logbook UI and the chosen Python wrapper. A replaceable adapter is the
+  boundary. C0.1 implementation executes Core IN-PROCESS with the EFB;
+  separate Core / Recorder / EFB processes are the owner-selected C0.2+
+  direction, pending actual IPC/supervision and benchmark decisions.
+- The owner highlighted future CONTROLLED simulator write/command use cases,
+  e.g. changing COM radio frequencies. Preserve an extensible, separately
+  authorised command interface with validation, source-capability and
+  module-permission checks. Current C0.1 simulator operation remains READ
+  ONLY. Do not provide unrestricted raw writes; future vPilot interactions
+  require separately confirmed supported interfaces and behaviour.
+- Public developer SDK, user module/plugin execution, external plugin
+  security/permissions and add-on aircraft plugin details are NOT designed
+  or selected at this point. Existing Aircraft Plugin Framework v0.4
+  remains unchanged; its older PMDG research note does not authorise a C0.1
+  plugin implementation. Owner explicitly asked to PARK plugin work.
+
+LIBRARY EVALUATION CHOICE
+- simconnect-H 0.7.2 is the FIRST candidate explicitly authorised for
+  evaluation; not a permanent runtime choice or validated dependency.
+  Maintained external library first with native ctypes/official SDK
+  integration fallback remains the owner's approved evaluation strategy.
+- Actual package archive files supplied for code/API validation:
+  simconnect_h-0.7.2-py3-none-any.whl
+    SHA256 ddd3216a4d8303e35c6e8cf2b469cdace443f0b9562c2f6052190023c53c6c7e
+  simconnect_h-0.7.2.tar.gz
+    SHA256 56bd7fb24de7c2db42746a827ae92184059a462d7f67b2a9ae8f212c32dcd994
+  These hashes identify the received local attachments; an official
+  release-hash comparison and import/runtime validation have NOT occurred.
+- The owner prefers to postpone extended third-party legal/redistribution
+  review UNTIL BEFORE FIRST BETA. This does not eliminate preliminary
+  dependency compatibility, licensing viability or secure-handling checks.
+  No claim of a security audit is made by package availability.
+
+19. COMPONENT-SOURCE WORK AND STAGE 1 EVIDENCE — 23 NOVEMBER 2026 (v0.7)
+------------------------------------------------------------------------
+COMPONENT SOURCE WORK EXPLICITLY OWNER-AUTHORISED
+- Initial Python Core source foundation prepared, then a general-purpose
+  simconnect-H adapter draft, then focused adapter source corrections.
+- Latest reviewed draft ZIP:
+  BBC_EFB_Core_SimConnectH_Adapter_Corrections_SOURCE_2026-11-23.zip
+  SHA256 e4fe85f9afe439a6e03670dbe61d911606610bae52f96cabb9dc2cc9c19e0e17.
+- Draft corrections cover subscription batching, avoiding excessive frame
+  callbacks for high-rate requests, disconnect/session continuity, stale
+  cache invalidation, event gating, diagnostics and shutdown ordering.
+  They have NOT proven native adapter safety or full functionality.
+- This code is a source DRAFT. Its source-tree version/contract is not a
+  released permanent Core SDK; it has not been incorporated into a whole
+  PySide6 C0.1 EFB application. Only specifically authorised component
+  source work occurred, not complete application coding/build permission.
+
+TEST EVIDENCE AS RECORDED IN STAGE 1 VALIDATION REPORT
+- Report file: BBC_EFB_Black_Box_Core_Validation_Status_2026-11-23.txt.
+- 3/3 in-package broker unit tests PASS, for subscription aggregation,
+  disconnect cache invalidation and overflow gap notice.
+- 5/5 additional OFFLINE FAKE-WRAPPER checks PASS, for synthetic numeric
+  callback routing, explicit rejection of requests below 1000 ms, synthetic
+  session reset, event consumer gating and absence of write calls in the
+  nominal read-only path. 8/8 aggregate applies ONLY to those tests.
+- The 5 additional checks used a simulated simconnect_native module.
+  NO test in that report ran against the real supplied v0.7.2 package,
+  a native SimConnect DLL, Windows, actual MSFS 2020, a live Flight Recorder,
+  a real aircraft or simulator frame-time benchmark.
+- The corrected adapter deliberately rejects sub-second intervals because
+  a safe/verified native mechanism was not established. High-rate near-
+  touchdown requirements and correspondence of last-touchdown values to a
+  specific landing remain open; do not treat 1 Hz as sufficient by default.
+- Wrapper-native reconnect behavior, event cancellation, string/indexed
+  SimVars, data quality, callback threading and bounded shutdown remain
+  UNVERIFIED against the actual library. A future worker or thread model is
+  not thereby selected or approved. Avoid duplicate native dispatch loops.
+
+20. NEXT TECHNICAL GATE / OWNER TESTING PAUSE — 23 NOVEMBER 2026 (v0.7)
+--------------------------------------------------------------------
+1. Inspect real supplied simconnect-H v0.7.2 wheel and source archives;
+   check native API names/signatures, event payloads, unsubscribe support,
+   subscription frequencies, batching, internal reconnect/dispatch, import
+   dependencies and expected Windows DLL placement. Repair draft
+   mismatches only with separate appropriate coding authorisation.
+2. THEN pause to agree on pilot-controlled read-only instrumentation for
+   Windows/MSFS 2020 and a test evidence sharing workflow. The owner has
+   proposed perhaps enabling more direct observation via an approved local
+   app/diagnostic collector, but NO deployment, remote computer control,
+   unattended access, background monitoring or network listener is approved.
+3. After explicit authorisation, conduct real Windows/MSFS 2020 tests of
+   connection, source identity, basic telemetry, events, pause/Active Pause,
+   aircraft reload, reconnect, shutdown, stale/gaps, touchdown and optional
+   supported command capability in a separate future milestone. C0.1 remains
+   operationally read-only. Test CPU/RAM/GPU, simulator FPS and frame times.
+4. Coordinate required Recorder semantics with Logbook Dev and choose
+   package/adapter based on actual validated capability; do not claim the
+   full C0.1 Logbook is implemented merely because Source components exist.
+5. Before Beta, review third-party licensing, redistribution and security;
+   apply earlier technical feasibility checks sooner where needed.
+
+CHANGE HISTORY
+2026-11-23 — v0.7: Preserved Q1–Q15 and all v0.6 history; documented
+owner-approved reusable generic SimVar/event Core, future guarded command
+capability, C0.1/C0.2 process plan, simconnect-H 0.7.2 first-evaluation
+status and received package hashes. Logged explicitly authorised Core source
+foundation and corrections, 3+5 limited offline tests and outstanding live
+verification, plus owner-directed pause for Windows/MSFS diagnostics planning.
+No complete EFB application, working simulator integration or new build.
+
+
+21. CODEX R3.1 WINDOWS EVIDENCE AND MIGRATION FREEZE — 23 NOVEMBER 2026 (v0.8)
+-------------------------------------------------------------------------------
+OVERVIEW
+- Previous v0.7 source-draft and 8/8 results remain accurate historical
+  milestones, but they are superseded as the LATEST evidence by Codex R3.1.
+- The owner authorised Core component revisions and guarded simulated offline
+  tests in Codex. Source candidates R3, then R3.1 were produced as COMPLETE
+  component trees, not an integrated EFB implementation or released SDK.
+- R3 extended test run: 23 executed, 21 PASS, 2 FAIL; identified a briefly
+  false CONNECTED status on failed dispatch startup and erased shutdown
+  uncertainty on repeated disconnect. R3.1 corrected both and also preserved
+  unread disconnect notices across rapid reconnection.
+- R3.1: 31/31 simulated OFFLINE tests pass, 0 fail/error/skip; Windows x64
+  CPython 3.12.14. Fake-wrapper safety guards prevented live import/DLL
+  loads/connections during those tests; no hang reported. Provider/broker
+  public interfaces remain unchanged. Real native work is NOT proven.
+
+LIBRARY / SDK PROBES — SEPARATE LEVELS OF EVIDENCE
+- Supplied simconnect-H 0.7.2 wheel imported directly on Windows without
+  installation. Adapter datatype conversion, actual callable signatures,
+  and closed-client registration/unsubscribe/close were checked with a guard
+  that prevented a native DLL load. This confirms ONLY the tested API shape.
+- A separately supplied MSFS SDK 0.24.6.0 x64 SimConnect.dll was loaded via
+  its explicit absolute path; its SHA-256 was checked and all twelve exports
+  declared by simconnect-H were resolved. No native SimConnect function was
+  CALLED, no session was opened and MSFS was not launched.
+- The owner-authorised live-smoke preflight then FAILED BEFORE native open:
+  simconnect_native/client.py in BOTH v0.7.2 wheel and tarball fails to import
+  find_simconnect_dll and is_untrusted_simconnect_dll from dll.py. With a
+  supplied explicit DLL path load_dll() raises NameError on
+  is_untrusted_simconnect_dll at line 215. No live MSFS connection occurred.
+- This is a confirmed distribution-source import defect, not evidence that
+  the SDK DLL exports or the Core broker are incompatible with MSFS.
+  Unchanged third-party wheel/tar.gz remain the evaluation reference; do not
+  silently edit, install or redistribute a patched vendor package.
+
+RETAINED UNSOLVED NATIVE LIMITATIONS
+- simconnect-H 0.7.2 does not reliably expose native unsubscribe and close
+  success; R3.1 surfaces uncertainty and may require host restart. Native
+  wrapper lock ordering, timer/restore races, actual event replay/callbacks,
+  true sampled-age/time, DLL use, reconnection, per-stream cadence and
+  frame-time overhead are NOT validated by fake-wrapper tests.
+- Ordinary event callback cannot deliver filename-bearing AircraftLoaded /
+  FlightLoaded payloads through the supported high-level path. No assumption
+  of universal indexed SimVars, add-on telemetry or reliable subsecond
+  touchdown rate may be made. R3.1 read-only C0.1 path remains proposed.
+- SimConnect-H is FIRST EVALUATION ONLY; no final binding/library selection,
+  Core baseline/release approval, automatic Recorder integration, live test
+  acceptance or C0.1 performance evidence exists.
+
+OWNER'S IMMEDIATE DECISION
+- The owner has HALTED implementation and decided to transfer the ENTIRE
+  project to Codex. A new Project Sources batch is authorised for preservation
+  only. Do not continue library repair or live tests until migration and
+  separate owner approval, including any corrected evaluation distribution.
+- Once permitted, verify corrected loader preflight BEFORE an approved
+  bounded parked-aircraft MSFS 2020 read-only smoke test. Only then research
+  real data delivery, event behaviour, Recorder feasibility and performance.
+  Do not change shared Core architecture or license terms unilaterally.
+
+EVIDENCE REFERENCES
+- BBC_EFB_Codex_Work_Package_2026-11-23.zip, latest R3.1 candidate and
+  test_artifacts/r3_1_offline_2026-11-23/REPORT.md
+  test_artifacts/r3_1_windows_wrapper_2026-11-23/REPORT.md
+  test_artifacts/r3_1_dll_load_2026-11-23/REPORT.md
+  test_artifacts/r3_1_live_preflight/REPORT.md
+- BBC_EFB_Main_Development_Handoff_2026-11-23.md, 23 November handoff.
+
+CHANGE HISTORY
+2026-11-23 — v0.8: Preserved complete v0.7 requirements/research; added
+actual R3.1 31-test Windows simulated evidence, real wheel import and
+DLL-free signature review, SDK DLL-load/export probe, confirmed loader
+missing-import blocker, remaining native limitations and owner Codex
+migration freeze. No MSFS connection or complete EFB build.

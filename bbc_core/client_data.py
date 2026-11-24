@@ -1,0 +1,61 @@
+"""Host-declared SimConnect Client Data areas and byte regions."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+
+
+MAX_AREA_BYTES = 8192
+CLIENT_DATA_WRITE = "client_data.write"
+
+
+class ClientDataMode(str, Enum):
+    ONCE = "once"
+    ON_SET = "on_set"
+    SECOND = "second"
+    VISUAL_FRAME = "visual_frame"
+
+
+@dataclass(frozen=True, slots=True)
+class ClientDataArea:
+    name: str
+    size: int
+    create: bool = False
+    writable: bool = False
+    creator_only: bool = True
+
+    def __post_init__(self):
+        if not isinstance(self.name, str):
+            raise ValueError("Supply an ASCII Client Data area name.")
+        name = self.name.strip()
+        if not name or len(name) > 255 or not name.isascii() or not name.isprintable():
+            raise ValueError("Supply a printable ASCII Client Data area name of at most 255 bytes.")
+        if type(self.size) is not int or not 1 <= self.size <= MAX_AREA_BYTES:
+            raise ValueError("Client Data area size must be between 1 and 8,192 bytes.")
+        if any(type(flag) is not bool for flag in (self.create, self.writable, self.creator_only)):
+            raise ValueError("Client Data area options must be Boolean.")
+        object.__setattr__(self, "name", name.upper())
+
+    def region(self, offset=0, size=None) -> ClientDataRegion:
+        if type(offset) is not int:
+            raise ValueError("Client Data offsets must be integers.")
+        return ClientDataRegion(self, offset, self.size - offset if size is None else size)
+
+
+@dataclass(frozen=True, slots=True)
+class ClientDataRegion:
+    area: ClientDataArea
+    offset: int
+    size: int
+
+    def __post_init__(self):
+        if not isinstance(self.area, ClientDataArea):
+            raise ValueError("A Client Data region requires an area.")
+        if (type(self.offset) is not int or type(self.size) is not int
+                or self.offset < 0 or self.size < 1 or self.offset + self.size > self.area.size):
+            raise ValueError("The region must fit within the declared Client Data area.")
+
+    @property
+    def capability_id(self):
+        return f"client_data:{self.area.name}:{self.offset}:{self.size}"
