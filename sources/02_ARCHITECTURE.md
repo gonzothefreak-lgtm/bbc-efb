@@ -7,7 +7,7 @@
 | C0.2 onward | Target separate EFB, Core and Recorder processes. IPC, supervision, restart behaviour and performance remain open. |
 | Core | Owns provider adapters, translation, shared demand-driven telemetry, simulator commands and the versioned consumer API. The first Core milestone includes reads and writes through one local MSFS 2020 session. Independent of Qt and Recorder semantics. |
 | Recorder | Owns flight events, logging state, record persistence and interruption recovery. |
-| Storage | First launch asks the pilot to select a writable local data folder. Prefer inspectable local formats such as JSON/JSONL/TXT/CSV. Keep component ownership and writer responsibilities explicit. Schema, atomic writes, migration and recovery details need design and tests. |
+| Storage | First launch asks the pilot to select a writable local data folder. The owner requires inspectable plain-text storage without SQL, including SQLite. Keep component ownership and writer responsibilities explicit. Schema, file layout, atomic writes, migration and recovery details need design and tests. |
 | Delivery | Portable ZIP with the whole buildable EFB, dependency and launch/build instructions, changelog, limitations and actual test status. Installer and redistribution need separate review. |
 
 Launch in Dispatch; load other Sections on demand while essential Core/Recorder consumers remain independent of navigation and minimise state. Suspend avoidable UI work when minimised. Preserve versioned logical boundaries for the later process split. No unapproved listeners, cloud requirement or simulator writes.
