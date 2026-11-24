@@ -17,16 +17,13 @@ from bbc_core.simconnect_abi import (
 )
 from bbc_core.simconnect_sdk import SimConnectSdk
 from test_client_data_offline import ClientDataSdk
+from test_adapter_support import FakeClock
 from test_simconnect_provider_offline import FakeSdk, packet
 
 
-class SimulatorBatchOfflineTests(TestCase):
+class SimulatorBatchOfflineTests(FakeClock, TestCase):
     def setUp(self):
-        self.now = 100.0
-        for module in ("core", "simconnect", "simconnect_advanced"):
-            clock = patch(f"bbc_core.{module}.monotonic", side_effect=lambda: self.now)
-            clock.start()
-            self.addCleanup(clock.stop)
+        self.start_clock(100.0)  # Shared clock for every bbc_core module, sleep included (A139).
         self.sdk = FakeSdk()
         self.sdk.supply_radio_reads = self.sdk.apply_write = False
         self.core = Core(SimConnectProvider(self.sdk))

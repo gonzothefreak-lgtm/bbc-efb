@@ -2,21 +2,17 @@
 
 from struct import pack
 from unittest import TestCase
-from unittest.mock import patch
 
 from bbc_core import Core, FacilityCacheUpdate, FacilityChange, FacilityKind, FacilityState, NavaidKind
 from bbc_core.simconnect import SimConnectProvider
 from bbc_core.simconnect_abi import ReceiveId, ReceiveListPrefix, ReceiveRequest
+from test_adapter_support import FakeClock
 from test_simconnect_provider_offline import FakeSdk, packet
 
 
-class FacilityCacheOfflineTests(TestCase):
+class FacilityCacheOfflineTests(FakeClock, TestCase):
     def setUp(self):
-        self.now = 100
-        for module in ("simconnect_facilities", "simconnect_facility_cache"):
-            clock = patch(f"bbc_core.{module}.monotonic", side_effect=lambda: self.now)
-            clock.start()
-            self.addCleanup(clock.stop)
+        self.start_clock(100)  # Shared clock for every bbc_core module, sleep included (A139).
         self.sdk = FakeSdk()
         self.core = Core(SimConnectProvider(self.sdk))
         self.addCleanup(self.core.disconnect)
@@ -114,15 +110,34 @@ class FacilityCacheOfflineTests(TestCase):
         self.core.pump()
         (((kind, added, removed), _),) = self.subscriptions()
         self.assertEqual(kind, 1)
-        record = self.airport(b"POINT") + pack("<f", 1.5)
-        self.page(ReceiveId.WAYPOINT_LIST, removed, record)
+        gone = self.airport(b"GONE") + pack("<f", 1.5)
+        point = self.airport(b"POINT") + pack("<f", 1.5)
+        self.page(ReceiveId.WAYPOINT_LIST, removed, gone)
         self.core.pump()
         self.assertFalse(self.watch_events(self.first))
-        self.page(ReceiveId.WAYPOINT_LIST, added, record)
+        self.page(ReceiveId.WAYPOINT_LIST, added, point, gone)
         self.core.pump()
-        self.assertEqual([reply.change for reply in self.watch_events(self.first)],
-                         [FacilityChange.SNAPSHOT, FacilityChange.REMOVED])
+        # GONE is in the snapshot, which is newer than its early removal (A109): it stays.
+        self.assertEqual([reply.change for reply in self.watch_events(self.first)], [FacilityChange.SNAPSHOT])
+        self.assertEqual([item.icao for item in self.first.facility_cache_snapshot(watch.id).entries],
+                         ["POINT", "GONE"])
+        self.page(ReceiveId.WAYPOINT_LIST, removed, point, gone)
+        self.core.pump()
+        self.assertEqual([reply.change for reply in self.watch_events(self.first)], [FacilityChange.REMOVED])
         self.assertEqual(self.first.facility_cache_snapshot(watch.id).entries, ())
+
+    def test_early_removals_of_unlisted_facilities_follow_the_snapshot(self):
+        self.core.connect()
+        watch = self.first.subscribe_facility_cache(FacilityKind.WAYPOINT)
+        self.core.pump()
+        (((_, added, removed), _),) = self.subscriptions()
+        self.page(ReceiveId.WAYPOINT_LIST, removed, self.airport(b"GONE") + pack("<f", 1.5))
+        self.page(ReceiveId.WAYPOINT_LIST, added, self.airport(b"POINT") + pack("<f", 1.5))
+        self.core.pump()
+        events = self.watch_events(self.first)
+        self.assertEqual([reply.change for reply in events], [FacilityChange.SNAPSHOT, FacilityChange.REMOVED])
+        self.assertEqual([item.icao for item in events[1].entries], ["GONE"])
+        self.assertEqual([item.icao for item in self.first.facility_cache_snapshot(watch.id).entries], ["POINT"])
 
     def test_malformed_watch_and_partial_timeout_do_not_affect_one_shot_requests(self):
         self.core.connect()

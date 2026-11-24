@@ -1,6 +1,6 @@
 """Match the starter ctypes declarations to MSFS 2020 SDK 0.24.6.0."""
 
-from ctypes import POINTER, alignment, c_bool, c_char, c_char_p, c_double, c_float, c_int32, c_void_p, sizeof
+from ctypes import alignment, c_bool, sizeof
 from unittest import TestCase
 
 from bbc_core import simconnect_abi as abi
@@ -65,75 +65,8 @@ class SimConnectAbiOfflineTests(TestCase):
         self.assertEqual([item.value for item in abi.Period], [0, 1, 2, 3, 4])
         self.assertEqual([item.value for item in abi.ClientDataPeriod], [0, 1, 2, 3, 4])
 
-    def test_initial_signatures_match_the_header(self):
-        handle, word = abi.HANDLE, abi.DWORD
-        expected = {
-            "SimConnect_Open": (POINTER(handle), c_char_p, handle, word, handle, word),
-            "SimConnect_Close": (handle,),
-            "SimConnect_CallDispatch": (handle, abi.DispatchProc, c_void_p),
-            "SimConnect_RequestResponseTimes": (handle, word, POINTER(c_float)),
-            "SimConnect_RetrieveString": (POINTER(abi.Receive), word, c_void_p, POINTER(c_char_p), POINTER(word)),
-            "SimConnect_InsertString": (c_void_p, word, POINTER(c_void_p), POINTER(word), c_char_p),
-            "SimConnect_RequestNotificationGroup": (handle, word, word, word),
-            "SimConnect_EnumerateControllers": (handle,),
-            "SimConnect_MapInputEventToClientEvent_EX1": (handle, word, c_char_p, word, word, word, word, c_int32),
-            "SimConnect_SetInputGroupPriority": (handle, word, word),
-            "SimConnect_RemoveInputEvent": (handle, word, c_char_p),
-            "SimConnect_ClearInputGroup": (handle, word),
-            "SimConnect_SetInputGroupState": (handle, word, word),
-            "SimConnect_RequestReservedKey": (handle, word, c_char_p, c_char_p, c_char_p),
-            "SimConnect_RequestDataOnSimObjectType": (handle, word, word, word, word),
-            "SimConnect_AICreateParkedATCAircraft": (handle, c_char_p, c_char_p, c_char_p, word),
-            "SimConnect_AICreateEnrouteATCAircraft": (handle, c_char_p, c_char_p, c_int32, c_char_p, c_double, c_int32, word),
-            "SimConnect_AICreateNonATCAircraft": (handle, c_char_p, c_char_p, abi.NativeInitialPosition, word),
-            "SimConnect_AICreateSimulatedObject": (handle, c_char_p, abi.NativeInitialPosition, word),
-            "SimConnect_AIReleaseControl": (handle, word, word),
-            "SimConnect_AIRemoveObject": (handle, word, word),
-            "SimConnect_AISetAircraftFlightPlan": (handle, word, c_char_p, word),
-            "SimConnect_FlightLoad": (handle, c_char_p),
-            "SimConnect_FlightSave": (handle, c_char_p, c_char_p, c_char_p, word),
-            "SimConnect_FlightPlanLoad": (handle, c_char_p),
-            "SimConnect_ExecuteAction": (handle, word, c_char_p, word, c_void_p),
-            "SimConnect_SubscribeToFacilities": (handle, word, word),
-            "SimConnect_UnsubscribeToFacilities": (handle, word),
-            "SimConnect_AddToFacilityDefinition": (handle, word, c_char_p),
-            "SimConnect_AddFacilityDataDefinitionFilter": (handle, word, c_char_p, word, c_void_p),
-            "SimConnect_ClearAllFacilityDataDefinitionFilters": (handle, word),
-            "SimConnect_RequestFacilityData": (handle, word, word, c_char_p, c_char_p),
-            "SimConnect_RequestFacilityData_EX1": (handle, word, word, c_char_p, c_char_p, c_char),
-            "SimConnect_RequestFacilitiesList_EX1": (handle, word, word),
-            "SimConnect_RequestFacilitiesList": (handle, word, word),
-            "SimConnect_SubscribeToFacilities_EX1": (handle, word, word, word),
-            "SimConnect_UnsubscribeToFacilities_EX1": (handle, word, c_bool, c_bool),
-            "SimConnect_RequestJetwayData": (handle, c_char_p, word, POINTER(c_int32)),
-            "SimConnect_GetNextDispatch": (handle, POINTER(POINTER(abi.Receive)), POINTER(word)),
-            "SimConnect_GetLastSentPacketID": (handle, POINTER(word)),
-            "SimConnect_AddToDataDefinition": (handle, word, c_char_p, c_char_p, word, c_float, word),
-            "SimConnect_ClearDataDefinition": (handle, word),
-            "SimConnect_RequestDataOnSimObject": (handle,) + (word,) * 8,
-            "SimConnect_SetDataOnSimObject": (handle,) + (word,) * 5 + (c_void_p,),
-            "SimConnect_SubscribeToSystemEvent": (handle, word, c_char_p),
-            "SimConnect_UnsubscribeFromSystemEvent": (handle, word),
-            "SimConnect_SetSystemEventState": (handle, word, word),
-            "SimConnect_RequestSystemState": (handle, word, c_char_p),
-            "SimConnect_MapClientEventToSimEvent": (handle, word, c_char_p),
-            "SimConnect_AddClientEventToNotificationGroup": (handle, word, word, c_int32),
-            "SimConnect_RemoveClientEvent": (handle, word, word),
-            "SimConnect_SetNotificationGroupPriority": (handle, word, word),
-            "SimConnect_ClearNotificationGroup": (handle, word),
-            "SimConnect_TransmitClientEvent": (handle,) + (word,) * 5,
-            "SimConnect_TransmitClientEvent_EX1": (handle,) + (word,) * 9,
-            "SimConnect_EnumerateInputEvents": (handle, word),
-            "SimConnect_EnumerateInputEventParams": (handle, abi.UINT64),
-            "SimConnect_GetInputEvent": (handle, word, abi.UINT64),
-            "SimConnect_SetInputEvent": (handle, abi.UINT64, word, c_void_p),
-            "SimConnect_SubscribeInputEvent": (handle, abi.UINT64),
-            "SimConnect_UnsubscribeInputEvent": (handle, abi.UINT64),
-            "SimConnect_MapClientDataNameToID": (handle, c_char_p, word),
-            "SimConnect_CreateClientData": (handle, word, word, word),
-            "SimConnect_AddToClientDataDefinition": (handle, word, word, word, c_float, word),
-            "SimConnect_ClearClientDataDefinition": (handle, word),
-            "SimConnect_RequestClientData": (handle,) + (word,) * 8,
-            "SimConnect_SetClientData": (handle,) + (word,) * 5 + (c_void_p,),
-        }
-        self.assertEqual(abi.SIGNATURES, expected)
+    # The former test_initial_signatures_match_the_header compared SIGNATURES with a
+    # hand-written copy of itself, so it proved nothing about the header (A72). The real
+    # checks are test_adapter_abi.AbiPrototypeTests: every argument is classified by its
+    # C type from the SimConnect.h prototypes, and the installed header is parsed when
+    # an MSFS SDK is present (skipped otherwise).

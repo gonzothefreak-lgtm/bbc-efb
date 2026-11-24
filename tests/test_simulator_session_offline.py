@@ -1,28 +1,25 @@
 """Check system state and notifications through the public API and fake SDK."""
 
 from unittest import TestCase
-from unittest.mock import patch
 from uuid import UUID
 
 from bbc_core import (
-    ConnectionState, Core, CoreRequestError, Event, FrameSample, Gap, InputCatalogState, MissionAction,
+    ConnectionState, Core, CoreRequestError, Event, FrameSample, InputCatalogState, MissionAction,
     Quality, SimObjectChange,
 )
+from bbc_core.contract import SignalError  # C7: provider errors are not Gaps
 from bbc_core.simconnect import SimConnectProvider
 from bbc_core.simconnect_abi import (
     ReceiveCustomActionPrefix, ReceiveEvent, ReceiveEventFilename, ReceiveEventFrame, ReceiveEventObject, ReceiveId,
     ReceiveRequest, ReceiveSystemState,
 )
+from test_adapter_support import FakeClock
 from test_simconnect_provider_offline import FakeSdk, packet
 
 
-class SimulatorSessionOfflineTests(TestCase):
+class SimulatorSessionOfflineTests(FakeClock, TestCase):
     def setUp(self):
-        self.now = 100
-        for module in ("bbc_core.core", "bbc_core.simconnect"):
-            clock = patch(f"{module}.monotonic", side_effect=lambda: self.now)
-            clock.start()
-            self.addCleanup(clock.stop)
+        self.start_clock(100)  # Shared clock for every bbc_core module, sleep included (A139).
         self.sdk = FakeSdk()
         self.core = Core(SimConnectProvider(self.sdk))
         self.addCleanup(self.core.disconnect)
@@ -187,7 +184,7 @@ class SimulatorSessionOfflineTests(TestCase):
         updates = self.first.poll()
         self.assertEqual([item.value for item in updates if isinstance(item, Event)],
                          [MissionAction(guid, True, "action")])
-        self.assertTrue(any(isinstance(item, Gap) and "Missing terminator" in item.reason for item in updates))
+        self.assertTrue(any(isinstance(item, SignalError) and "Missing terminator" in item.reason for item in updates))
 
     def test_public_load_event_shares_aircraft_input_lifecycle_watch(self):
         subscription = self.first.subscribe("sim.aircraft_loaded")
@@ -218,10 +215,10 @@ class SimulatorSessionOfflineTests(TestCase):
         flight = self.event_id(b"FlightLoaded")
         self.sdk.event(flight, 0)
         _, frame_send = next((args, send) for args, send in self.sdk.matching_calls(
-            "SimConnect_SubscribeToSystemEvent") if args[1] == b"FRAME")
+            "SimConnect_SubscribeToSystemEvent") if args[1] == b"Frame")
         self.sdk.exception(frame_send)
         self.core.pump()
-        gaps = [item.reason for item in self.first.poll() if isinstance(item, Gap)]
+        gaps = [item.reason for item in self.first.poll() if isinstance(item, SignalError)]
         self.assertEqual(len(gaps), 2)
         self.assertIn("Unexpected SimConnect packet", gaps[0])
         self.assertIn("exception", gaps[1])

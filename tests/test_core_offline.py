@@ -1,6 +1,5 @@
 """Offline checks for the first Black Box Core implementation."""
 
-from dataclasses import replace
 from datetime import datetime, timezone
 from unittest import TestCase
 from unittest.mock import patch
@@ -12,20 +11,22 @@ from bbc_core import (
 from bbc_core.catalog import READS
 from bbc_core.provider import ProviderError, Reading
 from bbc_core.simulated import SimulatedProvider
+from test_adapter_support import FakeClock
 
 
-class CoreOfflineTests(TestCase):
+class CoreOfflineTests(FakeClock, TestCase):
     def setUp(self):
-        self.now = 100.0
-        for target in ("bbc_core.core.monotonic", "bbc_core.simulated.monotonic"):
-            clock = patch(target, side_effect=lambda: self.now)
-            clock.start()
-            self.addCleanup(clock.stop)
+        self.start_clock(100.0)  # Every bbc_core clock and simconnect.sleep (A139).
         self.provider = SimulatedProvider()
         self.core = Core(self.provider)
         self.addCleanup(self.core.disconnect)
 
     def test_two_consumers_share_provider_demand_and_can_leave_independently(self):
+        # The simulated default now matches the live adapter's 1,000 ms floor; this case
+        # exercises sub-second shared cadence, so it opts into a faster simulated floor.
+        self.provider = SimulatedProvider(minimum_interval_ms=100)
+        self.core = Core(self.provider)
+        self.addCleanup(self.core.disconnect)
         inflight = self.core.register_consumer()
         diagnostics = self.core.register_consumer()
         self.core.connect()
@@ -74,7 +75,7 @@ class CoreOfflineTests(TestCase):
         self.core.pump()
         self.assertEqual(consumer.latest(subscription.id).quality, Quality.CURRENT)
 
-    def test_disconnect_discards_old_values_and_keeps_subscription_on_reconnect(self):
+    def test_disconnect_invalidates_latest_keeps_queued_samples_and_subscription_on_reconnect(self):
         consumer = self.core.register_consumer()
         subscription = consumer.subscribe("aircraft.ground_speed")
         session_one = self.core.connect().session_id
@@ -82,6 +83,7 @@ class CoreOfflineTests(TestCase):
         self.provider.lose_connection()
         self.core.pump()
         self.assertEqual(consumer.latest(subscription.id).quality, Quality.UNAVAILABLE)
+        self.assertEqual(consumer.latest(subscription.id).reason, "There is no connected provider session.")
 
         session_two = self.core.connect().session_id
         self.assertNotEqual(session_one, session_two)
@@ -91,10 +93,17 @@ class CoreOfflineTests(TestCase):
         updates = consumer.poll()
         states = [update.state for update in updates if isinstance(update, Connection)]
         self.assertIn(ConnectionState.DISCONNECTED, states)
+        # The sample received before the loss is still delivered, with its own session ID and
+        # ahead of the DISCONNECTED notice; it is not counted as consumer queue loss.
         self.assertEqual(
             [update.session_id for update in updates if isinstance(update, Observation)],
-            [session_two],
+            [session_one, session_two],
         )
+        first_sample = next(i for i, u in enumerate(updates) if isinstance(u, Observation))
+        disconnected = next(i for i, u in enumerate(updates)
+                            if isinstance(u, Connection) and u.state is ConnectionState.DISCONNECTED)
+        self.assertLess(first_sample, disconnected)
+        self.assertFalse(any(isinstance(update, Gap) for update in updates))
 
     def test_consumer_gap_is_explicit_and_does_not_affect_another_consumer(self):
         small = self.core.register_consumer(queue_size=1)

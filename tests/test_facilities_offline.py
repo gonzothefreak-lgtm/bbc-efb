@@ -12,15 +12,13 @@ from bbc_core import (
 from bbc_core.simconnect import SimConnectProvider
 from bbc_core.simconnect_abi import ReceiveFacilityDataPrefix, ReceiveId, ReceiveListPrefix, ReceiveRequest
 from bbc_core.simulated import SimulatedProvider
+from test_adapter_support import FakeClock
 from test_simconnect_provider_offline import FakeSdk, packet
 
 
-class FacilitiesOfflineTests(TestCase):
+class FacilitiesOfflineTests(FakeClock, TestCase):
     def setUp(self):
-        self.now = 100
-        clock = patch("bbc_core.simconnect_facilities.monotonic", side_effect=lambda: self.now)
-        clock.start()
-        self.addCleanup(clock.stop)
+        self.start_clock(100)  # Shared clock for every bbc_core module, sleep included (A139).
         self.sdk = FakeSdk()
         self.core = Core(SimConnectProvider(self.sdk))
         self.addCleanup(self.core.disconnect)
@@ -270,9 +268,15 @@ class FacilitiesOfflineTests(TestCase):
         vor_result = self.dispatch.facility_result(reads[NavaidKind.VOR].id).data[0]
         ndb_result = self.dispatch.facility_result(reads[NavaidKind.NDB].id).data[0]
         waypoint_result = self.dispatch.facility_result(reads[NavaidKind.WAYPOINT].id).data[0]
+        # The VOR/NDB schema returns no identity fields, so the region is unknown rather
+        # than an echo of the request, and the reply says so (finding A105).
         self.assertEqual((vor_result.name, vor_result.frequency_raw, vor_result.region), ("Test VOR", 113500000, None))
-        self.assertEqual((ndb_result.kind, ndb_result.range_m, ndb_result.terminal), (NavaidKind.NDB, 2000, True))
+        self.assertEqual((ndb_result.kind, ndb_result.range_m, ndb_result.terminal, ndb_result.region),
+                         (NavaidKind.NDB, 2000, True, None))
+        for kind in (NavaidKind.VOR, NavaidKind.NDB):
+            self.assertIn("no identity fields", self.dispatch.facility_result(reads[kind].id).detail)
         self.assertEqual((waypoint_result.icao, waypoint_result.region, waypoint_result.terminal), ("ABC", "AS", False))
+        self.assertNotIn("identity", self.dispatch.facility_result(reads[NavaidKind.WAYPOINT].id).detail)
 
     def test_navaid_no_data_and_wrong_typed_record_isolate_concurrent_queries(self):
         self.core.connect()
@@ -342,32 +346,32 @@ class FacilitiesOfflineTests(TestCase):
         self.assertEqual(self.dispatch.facility_result(second.id).data, ())
         self.assertTrue(self.dispatch.facility_result(first.id).data[0].fully_attached)
 
-    def test_jetway_timeout_fences_late_packets_until_a_new_session(self):
+    def test_jetway_timeout_without_reply_fences_late_packets_for_a_quiet_period(self):
+        # Finding A51: the reply window starts at send, and a timeout with no page
+        # at all fences jetways only for a quiet period, not for the whole session.
         self.core.connect()
         first = self.dispatch.request_jetways("YSSY")
         second = self.dispatch.request_jetways("YSCB")
         self.core.pump()
+        self.assertEqual(len(self.jetway_calls()), 1)
         self.now += 9
         self.core.pump()
-        for item in (first, second):
-            self.assertIn("fresh SimConnect session", self.dispatch.facility_result(item.id).detail)
-        self.jetway_page(0, 0, 1)
+        self.assertIn("timed out", self.dispatch.facility_result(first.id).detail)
+        self.assertIs(self.dispatch.facility_result(second.id).state, FacilityState.PENDING)
+        self.jetway_page(0, 0, 1)  # A late reply to the first request arrives during the fence.
         non_jetway, request = self.request()
         self.root(request)
         self.end(request)
-        blocked = self.dispatch.request_jetways("YSSY")
         self.core.pump()
         self.assertEqual(len(self.jetway_calls()), 1)
         self.assertIs(self.dispatch.facility_result(non_jetway.id).state, FacilityState.READY)
-        self.assertIs(self.dispatch.facility_result(blocked.id).state, FacilityState.UNAVAILABLE)
-        self.core.disconnect()
-        self.core.connect()
-        again = self.dispatch.request_jetways("YSSY")
+        self.assertIs(self.dispatch.facility_result(second.id).state, FacilityState.PENDING)
+        self.now += 9
         self.core.pump()
+        self.assertEqual([args[0] for args, _ in self.jetway_calls()], [b"YSSY", b"YSCB"])
         self.jetway_page(0, 0, 1)
         self.core.pump()
-        self.assertEqual(len(self.jetway_calls()), 2)
-        self.assertEqual(self.dispatch.facility_result(again.id).data, ())
+        self.assertEqual(self.dispatch.facility_result(second.id).data, ())
 
     def test_jetway_sdk_rejection_is_correlated_and_wrong_airport_fences_results(self):
         self.core.connect()

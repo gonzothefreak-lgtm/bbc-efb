@@ -1,41 +1,92 @@
-"""First direct MSFS 2020 provider for Core. All SDK calls have one serial owner."""
+"""First direct MSFS 2020 provider for Core. All SDK calls have one serial owner.
+
+Failure scope
+-------------
+One shared SimConnect session serves every module, so the provider keeps a
+failure local whenever it can be attributed:
+
+* QUIT, a broken transport (an HRESULT failure, an undecodable packet header or
+  exception packet) and a rejected required lifecycle registration end the
+  session. Everything else is local.
+* Every SDK call is recorded in an age-pruned packet ledger. An exception names
+  its packet, so it is routed to the owner (a signal, a command, a facility
+  request, a helper). The owner degrades: an error Reading, an UNAVAILABLE
+  facility reply, a rejected or uncertain command. A late exception for a packet
+  whose owner has finished, or one nobody claims, is logged and ignored.
+* Failed registrations are retried with capped exponential backoff.
+* Write safety stays fail-closed: a command whose confirmation cannot be
+  established is reported UNCERTAIN, which Core uses to block further writes.
+
+Update queue
+------------
+Control updates (command outcomes, facility and catalog replies, error
+readings, discrete system, client and hardware-input events, Disconnect) are
+never evicted. Telemetry readings share a large
+bounded buffer whose overflow is reported as an IngressGap. ``drain(limit)``
+stops reading SimConnect once ``limit`` updates are waiting, so backlog stays in
+SimConnect's own queue instead of being dropped here.
+
+Snapshots
+---------
+One multi-datum definition and request serve each SnapshotSpec. Without
+``changed_only`` the simulator clocks (SIMULATION TIME, ABSOLUTE TIME, SIMULATION
+RATE) are appended and ``sample_time`` is ABSOLUTE TIME via
+``contract.simulator_utc``. With ``changed_only`` the definition holds only the
+requested fields and uses SIMCONNECT_DATA_REQUEST_FLAG_CHANGED, so SimConnect
+really sends only when a field changed; such frames report no clocks (None).
+Fields SimConnect refuses are excluded and remembered for the life of the demand,
+across rebuilds and backoff retries.
+
+COM1
+----
+Frequencies are read as FLOAT64 Hz and rounded to integer Hz (contract C6). A set
+command reads COM SPACING MODE:1 with its baseline when the simulator provides it,
+and refuses a channel the current spacing cannot tune before anything is sent.
+"""
 
 from __future__ import annotations
 
 from collections import deque
 from ctypes import create_string_buffer, sizeof
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from itertools import count
+import logging
 from math import isclose, isfinite
 from struct import Struct, error as StructError
-from time import monotonic, sleep
-from typing import Protocol
+from time import monotonic, perf_counter, sleep
+from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 from .aircraft_inputs import INPUT_WRITE
-from .catalog import COM1_ACTIVE, COM1_STANDBY, OPERATIONS, SYSTEM_EVENTS, SYSTEM_STATES, CommandTransport
+# com_channel_problem: one COM channel rule (contract C6), shared with Core and SimulatedProvider,
+# so all three give the same rejection detail.
+from .catalog import (
+    FREQUENCY_HZ_SIGNALS, OPERATIONS, SYSTEM_EVENTS, SYSTEM_STATES, CommandTransport, com_channel_problem,
+)
 from .client_data import CLIENT_DATA_WRITE
-from .contract import FrameSample, MissionAction, SimObjectChange, Source, ValueType
+from .contract import FrameSample, MissionAction, SimObjectChange, SnapshotPeriod, Source, ValueType, simulator_utc
 from .facilities import FacilityState
 from .provider import (
     Command, CommandOutcome, CommandRejected, Demand, Disconnect, IngressGap,
-    FacilityReply, Outcome, ProviderError, Reading, Signal,
+    FacilityReply, Outcome, ProviderError, Reading, Signal, SnapshotFrame,
 )
 from .sdk_simvar import CLIENT_EVENT_SEND, SIMVAR_WRITE, SimVarFormat
 from .simconnect_abi import (
-    ClientDataPeriod, DataType, Period, Receive, ReceiveCustomActionPrefix, ReceiveEvent,
-    ReceiveEventFilename, ReceiveEventFrame, ReceiveEventObject, ReceiveException, ReceiveId,
+    DATA_REQUEST_FLAG_CHANGED, ClientDataPeriod, DataType, Period, Receive, ReceiveCustomActionPrefix,
+    ReceiveEvent, ReceiveEventFilename, ReceiveEventFrame, ReceiveEventObject, ReceiveException, ReceiveId,
     ReceiveOpen, ReceiveRequest, ReceiveSimObjectDataPrefix, ReceiveSystemState,
 )
 from .simconnect_client_data import SimConnectClientData
-from .simconnect_advanced import OPERATIONS as ADVANCED_OPERATIONS, SimConnectAdvanced
+from .simconnect_advanced import OPERATIONS as ADVANCED_OPERATIONS, OPERATION_EXPORTS, SimConnectAdvanced
 from .simconnect_client_events import SimConnectClientEvents
-from .simconnect_facilities import SimConnectFacilities
+from .simconnect_facilities import FACILITY_WORST_CASE_SECONDS, SimConnectFacilities
 from .simconnect_input_events import SimConnectInputEvents
-from .simulator_ops import SimulatorRead, SimulatorOperation
+from .simconnect_ledger import PacketLedger
+from .simulator_ops import SimulatorRead
 
 
+_LOG = logging.getLogger(__name__)
 _USER_AIRCRAFT = 0
 _UNUSED = 0xFFFFFFFF
 _DEFAULT_GROUP_PRIORITY = 2_000_000_000
@@ -46,10 +97,16 @@ _SYSTEM_STATE_NAMES = {
     "SIM": b"Sim", "DIALOGMODE": b"DialogMode", "AIRCRAFTLOADED": b"AircraftLoaded",
     "FLIGHTLOADED": b"FlightLoaded", "FLIGHTPLAN": b"FlightPlan",
 }
-_SYSTEM_EVENT_NAMES = {
-    "PAUSE_EX1": b"Pause_EX1", "AIRCRAFTLOADED": b"AircraftLoaded", "FLIGHTLOADED": b"FlightLoaded",
-}
+# Canonical SDK spelling for every documented system event. Signal names are
+# upper-cased for matching, but the SDK documents these names in mixed case.
+_SYSTEM_EVENT_NAMES = {name.upper(): name.encode("ascii") for name in (
+    "1sec", "4sec", "6Hz", "AircraftLoaded", "Crashed", "CrashReset", "CustomMissionActionExecuted",
+    "FlightLoaded", "FlightPlanActivated", "FlightPlanDeactivated", "FlightSaved", "Frame",
+    "ObjectAdded", "ObjectRemoved", "Pause", "Pause_EX1", "Paused", "PauseFrame", "PositionChanged",
+    "Sim", "SimStart", "SimStop", "Sound", "Unpaused", "View", "WeatherModeChanged",
+)}
 _SYSTEM_STATE_TIMEOUT = 3.0
+_RESPONSE_TIMEOUT = 4.0  # Commands that wait for a simulator reply (create, reserve key, ...).
 _DATATYPES = {
     ValueType.BOOLEAN: (DataType.INT32, Struct("<i")),
     ValueType.INTEGER: (DataType.INT32, Struct("<i")),
@@ -65,7 +122,51 @@ _SIMVAR_FORMATS = {
     SimVarFormat.STRING128: (DataType.STRING128, Struct("<128s")),
     SimVarFormat.STRING260: (DataType.STRING260, Struct("<260s")),
 }
-_RADIO_PAIR = Struct("<ii")
+# COM frequencies are read as FLOAT64 Hz and rounded to the nearest integer Hz
+# when decoded (contract C6), never truncated through INT32. MSFS may hold the
+# value as float32 internally (an 8 Hz step near 136 MHz), so readback compares
+# within _COM_RADIO_INT_TOL, which stays far below the 5 kHz channel-name grid.
+_COM1_PAIR = (
+    Signal("COM ACTIVE FREQUENCY:1", "Hz", ValueType.NUMBER),
+    Signal("COM STANDBY FREQUENCY:1", "Hz", ValueType.NUMBER),
+)
+_FREQUENCY_ENCODING = (DataType.FLOAT64, Struct("<d"))
+_COM1_SPACING = (Signal("COM SPACING MODE:1", "enum", ValueType.INTEGER),)
+_RADIO_PAIR = Struct("<dd")
+_SPACING = Struct("<i")
+# A value MSFS stores as float32 (or converts through float32) reads back within
+# about one float32 step. Two steps of relative tolerance confirm such a write
+# while a different value is still never confirmed.
+_FLOAT_READBACK_REL_TOL = 2.0 ** -22
+_FLOAT_READBACK_ABS_TOL = 1e-6
+_COM_BAND = (118_000_000, 137_000_000)
+_COM_RADIO_INT_TOL = 100  # Hz, see _COM1_PAIR.
+_SPACING_PENDING = object()
+_SNAPSHOT_PERIODS = {
+    SnapshotPeriod.SECOND: Period.SECOND,
+    SnapshotPeriod.SIM_FRAME: Period.SIM_FRAME,
+    SnapshotPeriod.VISUAL_FRAME: Period.VISUAL_FRAME,
+}
+# Clock fields appended after the requested fields of a snapshot definition. A
+# changed_only snapshot leaves them out: SIMULATION TIME and ABSOLUTE TIME change
+# on every frame, so with them in the definition SIMCONNECT_DATA_REQUEST_FLAG_CHANGED
+# would send the snapshot every period. The TAGGED flag does not help either,
+# because SimConnect still sends a (clock-only) packet whenever any datum changed.
+# A changed_only frame therefore reports the clocks and sample_time as None, and
+# consumers use the host receipt time.
+_SNAPSHOT_CLOCKS = (
+    Signal("SIMULATION TIME", "seconds", ValueType.NUMBER),
+    Signal("ABSOLUTE TIME", "seconds", ValueType.NUMBER),
+    Signal("SIMULATION RATE", "number", ValueType.NUMBER),
+)
+_MAX_SNAPSHOT_FIELDS = 512
+_DATA_CAP = 8192
+_RETRY_BASE_S = 2.0
+_RETRY_MAX_S = 60.0
+_BASELINE_PACKET_BUDGET = 256
+_DRAIN_TIME_BUDGET_S = 0.02
+_DRAIN_MIN_PACKETS = 64
+_RESERVED_KEY_PREFIX = "RESERVED_KEY_"
 
 
 class _Sdk(Protocol):
@@ -76,6 +177,26 @@ class _Sdk(Protocol):
     def next_packet(self, handle) -> bytes | None: ...
     def call(self, function: str, *args) -> None: ...
     def last_packet_id(self, handle) -> int: ...
+
+
+@runtime_checkable
+class _OptionalSdk(Protocol):
+    """Optional SDK features the provider looks up with getattr.
+
+    A transport may omit any of them: without ``has`` every export is assumed
+    present, without ``wait``/``event_handle`` the provider sleeps, without
+    ``wake`` waking is a no-op, without ``take_dropped`` no overflow count is
+    reported, and without ``response_times`` diagnostics are refused.
+    ``SimConnectSdk`` implements all of them (tests/test_adapter_round4.py).
+    """
+
+    @property
+    def event_handle(self) -> object | None: ...
+    def has(self, name: str) -> bool: ...
+    def wait(self, timeout: float) -> bool: ...
+    def wake(self) -> None: ...
+    def take_dropped(self) -> int: ...
+    def response_times(self, handle) -> object: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +216,7 @@ class _PendingCommand:
     readback_packet: int | None = None
     mapped_event_id: int | None = None
     response_id: int | None = None
+    observed: tuple | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,13 +226,19 @@ class _Readback:
     expected: tuple
     description: str
     client_data_id: int | None = None
+    rel_tol: float = 0.0
+    int_tol: int = 0
+    round_hz: bool = False   # FLOAT64 Hz values rounded to integer Hz before comparing.
 
     def matches(self, values):
         for expected, actual in zip(self.expected, values, strict=True):
             if expected is None:
                 continue
-            if type(expected) is float:
-                if not isclose(expected, actual, rel_tol=0, abs_tol=1e-6):
+            if isinstance(expected, frozenset):
+                if not any(abs(actual - option) <= self.int_tol for option in expected):
+                    return False
+            elif type(expected) is float:
+                if not isclose(expected, actual, rel_tol=self.rel_tol, abs_tol=_FLOAT_READBACK_ABS_TOL):
                     return False
             elif type(expected) is bool:
                 if expected != bool(actual):
@@ -118,15 +246,70 @@ class _Readback:
             elif isinstance(expected, bytes) and self.client_data_id is None:
                 if expected != actual.split(b"\0", 1)[0]:
                     return False
+            elif type(expected) is int and self.int_tol:
+                if abs(expected - actual) > self.int_tol:
+                    return False
             elif expected != actual:
                 return False
         return True
+
+
+@dataclass(slots=True)
+class _SnapshotState:
+    """One multi-datum definition and request serving one SnapshotSpec."""
+
+    signal: Signal
+    registration_id: int
+    definition: int
+    request: int
+    positions: tuple[int, ...]        # Positions (fields then clocks) present in the definition.
+    decoder: Struct
+    flags: int
+    excluded: set[int] = field(default_factory=set)
+    requested: bool = False
+
+
+def _round_hz(values):
+    """Round FLOAT64 Hz readings to integer Hz. A non-finite value is invalid."""
+    if not all(isfinite(value) for value in values):
+        raise ProviderError("SimConnect returned a non-finite COM frequency.")
+    return tuple(round(value) for value in values)
+
+
+def _text_value(value):
+    return value.split(b"\0", 1)[0].decode("utf-8", errors="replace")
+
+
+def _com_readback_options(frequency, baseline):
+    """Values that confirm a COM SET_HZ request, allowing MSFS channel snapping.
+
+    MSFS may store the request snapped to the 25 kHz grid, the 8.33 kHz carrier
+    grid or the 5 kHz 8.33 channel-name grid. The exact request always confirms.
+    A snapped value equal to the previous standby frequency would not show that
+    anything changed, so it is left out and only the exact value confirms.
+    """
+    low = _COM_BAND[0]
+    offset = frequency - low
+    options = {
+        frequency,
+        low + round(offset / 25_000) * 25_000,
+        low + round(round(offset * 3 / 25_000) * 25_000 / 3),
+        low + round(offset / 5_000) * 5_000,
+    }
+    return frozenset(
+        value for value in options
+        if value == frequency or (_COM_BAND[0] <= value < _COM_BAND[1] and abs(value - baseline) > _COM_RADIO_INT_TOL)
+    )
 
 
 class SimConnectProvider:
     """Adapt an explicitly loaded SDK or an injected fake to the Core contract."""
 
     minimum_interval_ms = 1000
+    # Native SimConnect periods for value subscriptions are whole seconds. Core
+    # should round a requested interval up to this granularity when it reports
+    # the accepted interval to the consumer.
+    interval_granularity_ms = 1000
 
     def __init__(self, sdk: _Sdk, *, open_timeout=3.0,
                  baseline_timeout=0.5, readback_timeout=1.5, legacy_facility_additions=False):
@@ -141,6 +324,11 @@ class SimConnectProvider:
         self._open_timeout = open_timeout
         self._baseline_timeout = baseline_timeout
         self._readback_timeout = readback_timeout
+        # Core sizes its own backstop deadlines from these (see bbc_core/provider.py).
+        # A sent command reports its outcome within max_command_timeout_seconds; a
+        # facility request is answered or failed within facility_timeout_seconds.
+        self.max_command_timeout_seconds = max(readback_timeout, _RESPONSE_TIMEOUT)
+        self.facility_timeout_seconds = FACILITY_WORST_CASE_SECONDS
         self._legacy_facility_additions = legacy_facility_additions
         self._handle = None
         self._session = None
@@ -152,26 +340,43 @@ class SimConnectProvider:
         self._registrations: dict[Signal, _Registration] = {}
         self._by_id: dict[int, _Registration] = {}
         self._failed: set[int] = set()
-        self._sent_registrations: dict[int, tuple[int, str]] = {}
+        self._retry_attempts: dict[Signal, int] = {}
+        self._retry_due: dict[Signal, float] = {}
+        self._ledger = PacketLedger()
+        self._last_sent = None
+        self._sent_registrations = PacketLedger()
         self._simvar_definitions: set[int] = set()
         self._simvar_requests: set[int] = set()
+        self._snapshots: dict[Signal, _SnapshotState] = {}
+        self._snapshot_requests: dict[int, _SnapshotState] = {}
+        self._snapshot_field_packets = PacketLedger()
+        # Field positions SimConnect refused, kept per snapshot signal across rebuilds
+        # and backoff retries until the demand ends, so a refused field is not re-added.
+        self._snapshot_exclusions: dict[Signal, set[int]] = {}
+        self._snapshot_rebuilds: set[Signal] = set()
         self._system_event_ids: dict[Signal, int] = {}
         self._disabled_events: set[int] = set()
         self._lifecycle_events: set[int] = set()
         self._state_requests: dict[int, tuple[Signal, float]] = {}
-        self._updates = deque()
+        self._control: deque = deque()
+        self._data: deque = deque()
+        self._sequence = count()
         self._dropped = 0
         self._event_ids: dict[str, int] = {}
         self._event_errors: dict[str, str] = {}
-        self._event_map_packets: dict[int, tuple[str, int]] = {}
+        self._event_map_packets = PacketLedger()
         self._write_definitions: dict[tuple[Signal, ...], int] = {}
-        self._write_definition_packets: dict[int, int] = {}
+        self._write_definition_packets = PacketLedger()
         self._write_definition_errors: dict[int, str] = {}
         self._before_request = None
         self._before_packet = None
         self._before_definition = None
         self._before_reading = None
         self._before_error = None
+        self._spacing_definition = None
+        self._spacing_request = None
+        self._spacing_packet = None
+        self._spacing_value = _SPACING_PENDING
         self._pending: _PendingCommand | None = None
         self._inputs: SimConnectInputEvents | None = None
         self._client_data: SimConnectClientData | None = None
@@ -179,20 +384,37 @@ class SimConnectProvider:
         self._advanced: SimConnectAdvanced | None = None
         self._facilities: SimConnectFacilities | None = None
 
+    # Capability support -------------------------------------------------------
+
+    def _has(self, *exports):
+        has = getattr(self._sdk, "has", None)
+        return has is None or all(has(name) for name in exports)
+
     def supports_signal(self, signal):
+        if signal.snapshot is not None or signal.value_type is ValueType.SNAPSHOT:
+            return self._supports_snapshot(signal)
         if signal.hardware_input is not None:
-            return signal.event and signal.value_type is ValueType.HARDWARE_INPUT
+            return (signal.event and signal.value_type is ValueType.HARDWARE_INPUT
+                    and self._has("SimConnect_MapInputEventToClientEvent_EX1"))
         if signal.client_data_region is not None:
-            return signal.value_type is ValueType.BYTES
+            return signal.value_type is ValueType.BYTES and self._has("SimConnect_RequestClientData")
         if signal.input_id is not None:
-            return signal.value_type in (ValueType.NUMBER, ValueType.TEXT)
+            return (signal.value_type in (ValueType.NUMBER, ValueType.TEXT)
+                    and self._has("SimConnect_SubscribeInputEvent", "SimConnect_GetInputEvent"))
         if signal.client_event:
-            return signal.event and signal.value_type is ValueType.CLIENT_EVENT
+            return (signal.event and signal.value_type is ValueType.CLIENT_EVENT
+                    and self._has("SimConnect_AddClientEventToNotificationGroup"))
         if signal.event:
             return SYSTEM_EVENTS.get(signal.name) == signal
         if signal.system_state:
             return SYSTEM_STATES.get(signal.name) == signal
-        if signal.value_type not in _DATATYPES:
+        return self._supports_simvar(signal)
+
+    @staticmethod
+    def _supports_simvar(signal):
+        if (signal.value_type not in _DATATYPES or signal.event or signal.system_state
+                or signal.input_id is not None or signal.client_data_region is not None
+                or signal.client_event or signal.hardware_input is not None or signal.snapshot is not None):
             return False
         if signal.local_simvar:
             return (signal.name.startswith("L:") and signal.value_type is ValueType.NUMBER
@@ -205,9 +427,38 @@ class SimConnectProvider:
                  bool(signal.unit and signal.unit.isascii()))
         )
 
+    def _supports_snapshot(self, signal):
+        spec = signal.snapshot
+        return (
+            spec is not None and signal.value_type is ValueType.SNAPSHOT
+            and isinstance(spec.fields, tuple) and 1 <= len(spec.fields) <= _MAX_SNAPSHOT_FIELDS
+            and all(isinstance(item, Signal) and self._supports_simvar(item) for item in spec.fields)
+            and spec.period in _SNAPSHOT_PERIODS
+            and type(spec.every) is int and 1 <= spec.every <= 0xFFFFFFFF
+            and isinstance(spec.changed_only, bool)
+        )
+
     def supports_command(self, operation):
-        return (operation in OPERATIONS or operation in ADVANCED_OPERATIONS
-                or operation in (CLIENT_DATA_WRITE, SIMVAR_WRITE, CLIENT_EVENT_SEND))
+        if operation in ADVANCED_OPERATIONS:
+            return self._has(*OPERATION_EXPORTS.get(ADVANCED_OPERATIONS[operation], ()))
+        if operation == CLIENT_DATA_WRITE:
+            return self._has("SimConnect_SetClientData", "SimConnect_RequestClientData")
+        if operation == INPUT_WRITE:
+            return self._has("SimConnect_SetInputEvent")
+        if operation == SIMVAR_WRITE:
+            return self._has("SimConnect_SetDataOnSimObject")
+        if operation == CLIENT_EVENT_SEND:
+            return self._has("SimConnect_MapClientEventToSimEvent", "SimConnect_TransmitClientEvent")
+        mapping = OPERATIONS.get(operation)
+        if mapping is None:
+            return False
+        if mapping.transport is CommandTransport.SIMVAR:
+            return self._has("SimConnect_SetDataOnSimObject")
+        if mapping.transport is CommandTransport.EXTENDED_EVENT:
+            return self._has("SimConnect_MapClientEventToSimEvent", "SimConnect_TransmitClientEvent_EX1")
+        return self._has("SimConnect_MapClientEventToSimEvent", "SimConnect_TransmitClientEvent")
+
+    # Session ------------------------------------------------------------------
 
     def connect(self, session_id):
         if self._handle is not None:
@@ -219,28 +470,26 @@ class SimConnectProvider:
         while monotonic() < deadline:
             packet = self._next()
             if packet is None:
-                sleep(0.005)
+                self._idle(0.005)
             elif packet[0] == ReceiveId.OPEN:
                 self._struct(ReceiveOpen, packet[1])
+                last_packet = lambda: self._last_sent  # noqa: E731 - cached by _call
                 self._inputs = SimConnectInputEvents(
-                    session_id, self._call, lambda: self._sdk.last_packet_id(self._handle),
-                    self._new_id, self._offer, self._retain_aircraft_lifecycle,
+                    session_id, self._call, last_packet, self._new_id, self._offer, self._retain_aircraft_lifecycle,
                 )
                 self._client_data = SimConnectClientData(
-                    session_id, self._call, lambda: self._sdk.last_packet_id(self._handle),
-                    self._new_id, self._offer,
+                    session_id, self._call, last_packet, self._new_id, self._offer,
                 )
                 self._client_events = SimConnectClientEvents(
-                    self._call, lambda: self._sdk.last_packet_id(self._handle), self._new_id,
-                    self._map_event, self._reading,
+                    self._call, last_packet, self._new_id, self._map_event, self._reading,
                 )
                 self._facilities = SimConnectFacilities(
-                    session_id, self._call, lambda: self._sdk.last_packet_id(self._handle),
-                    self._new_id, self._offer, legacy_facility_additions=self._legacy_facility_additions,
+                    session_id, self._call, last_packet, self._new_id, self._offer,
+                    legacy_facility_additions=self._legacy_facility_additions,
                 )
                 self._advanced = SimConnectAdvanced(
-                    session_id, self._call, lambda: self._sdk.last_packet_id(self._handle),
-                    self._new_id, self._offer, self._reading, self._simvar_encoding,
+                    session_id, self._call, last_packet, self._new_id, self._offer, self._reading,
+                    self._simvar_encoding, private_event=self._client_events.register_private,
                 )
                 self._ready = True
                 return
@@ -259,6 +508,37 @@ class SimConnectProvider:
         self._session = None
         self._reset()
 
+    def wait(self, timeout):
+        """Block a host worker until SimConnect signals data or ``timeout`` passes.
+
+        Uses the SDK's Win32 wake event when it has one (SimConnectSdk with
+        ``wake_event=True``); otherwise sleeps. Safe to call without Core's
+        provider lock because it never touches the SimConnect handle.
+        """
+        waiter = getattr(self._sdk, "wait", None)
+        if waiter is None:
+            sleep(max(0.0, timeout))
+            return False
+        return waiter(timeout)
+
+    def wake(self):
+        """Wake a worker blocked in ``wait()``, for example after queuing a command.
+
+        Signals the SDK's wake event when there is one; otherwise does nothing.
+        Like ``wait()``, it never touches the SimConnect handle.
+        """
+        waker = getattr(self._sdk, "wake", None)
+        if waker is not None:
+            waker()
+
+    def _idle(self, seconds):
+        if getattr(self._sdk, "event_handle", None) is not None:
+            self.wait(seconds)  # Optional SDK member: wait() falls back to sleep without it.
+        else:
+            sleep(seconds)
+
+    # Demand -------------------------------------------------------------------
+
     def replace_demand(self, demand):
         if not self._ready:
             return
@@ -271,6 +551,12 @@ class SimConnectProvider:
         desired = {item.signal: item for item in demand if not item.signal.client_event and not item.signal.hardware_input}
         for signal, registration in tuple(self._registrations.items()):
             if signal.event and signal in desired:
+                # Keep the current Demand so a backoff retry of a failed
+                # subscription re-applies the latest event_enabled, not a stale one.
+                kept = _Registration(desired[signal], registration.id)
+                self._registrations[signal] = kept
+                if self._by_id.get(registration.id) is registration:
+                    self._by_id[registration.id] = kept
                 self._set_system_event_enabled(registration.id, desired[signal].event_enabled)
             elif desired.get(signal) != registration.demand:
                 self._retire(registration)
@@ -336,13 +622,18 @@ class SimConnectProvider:
         self._state_requests[id] = (signal, monotonic() + _SYSTEM_STATE_TIMEOUT)
 
     def _retain_aircraft_lifecycle(self):
+        # Returns its own frozenset of only the aircraft and flight ids. The shared
+        # _lifecycle_events set also gains OBJECTREMOVED for advanced objects, and an
+        # unrelated AI object leaving the world is not an aircraft change.
+        ids = []
         for name in ("AIRCRAFTLOADED", "FLIGHTLOADED"):
             id = self._ensure_system_event(SYSTEM_EVENTS[name])
             if id in self._failed:
                 raise ProviderError(f"Cannot track the required {name} lifecycle event.")
             self._lifecycle_events.add(id)
             self._set_system_event_enabled(id, True)
-        return self._lifecycle_events
+            ids.append(id)
+        return frozenset(ids)
 
     def _set_system_event_enabled(self, id, enabled):
         enabled = enabled or id in self._lifecycle_events
@@ -367,20 +658,30 @@ class SimConnectProvider:
         signal = demand.signal
         if not self.supports_signal(signal):
             raise ProviderError("Unsupported SimConnect signal.")
+        failed_now = False
         if signal.event:
             try:
                 id = self._ensure_system_event(signal)
             except ProviderError as error:
                 self._reading(signal, None, error=str(error))
                 id = self._new_id()
-                self._failed.add(id)
+                failed_now = True
         else:
             id = self._new_id()
         registration = _Registration(demand, id)
+        self._registrations[signal] = registration
+        self._by_id[id] = registration
         if signal.input_id is not None:
             self._inputs.subscribe(signal)
         elif signal.client_data_region is not None:
             self._client_data.subscribe(signal)
+        elif signal.snapshot is not None:
+            try:
+                self._define_snapshot(registration, self._snapshot_exclusions.get(signal, set()))
+            except ProviderError as error:
+                self._forget_total_refusal(signal)
+                failed_now = True
+                self._reading(signal, None, error=str(error))
         elif not (signal.event or signal.system_state):
             try:
                 self._define(id, signal, registration_id=id)
@@ -392,26 +693,70 @@ class SimConnectProvider:
                 )
                 self._simvar_requests.add(id)
             except ProviderError as error:
-                self._failed.add(id)
+                failed_now = True
                 self._reading(signal, None, error=str(error))
-        self._registrations[signal] = registration
-        self._by_id[id] = registration
+        if failed_now:
+            self._mark_failed(registration)
         if signal.event:
             self._set_system_event_enabled(id, demand.event_enabled)
         elif signal.system_state:
             self.request_system_state(signal)
 
-    def _retire(self, registration):
+    def _mark_failed(self, registration):
+        self._failed.add(registration.id)
+        signal = registration.demand.signal
+        if registration.id in self._lifecycle_events:
+            return
+        attempt = self._retry_attempts.get(signal, 0)
+        self._retry_attempts[signal] = attempt + 1
+        self._retry_due[signal] = monotonic() + min(_RETRY_MAX_S, _RETRY_BASE_S * 2 ** min(attempt, 6))
+
+    def _retry_failed_registrations(self):
+        now = monotonic()
+        for signal, due in tuple(self._retry_due.items()):
+            registration = self._registrations.get(signal)
+            if registration is None or registration.id not in self._failed:
+                del self._retry_due[signal]
+                continue
+            if now < due:
+                continue
+            del self._retry_due[signal]
+            _LOG.info("Retrying the failed SimConnect registration for %s.", signal.name)
+            self._retire(registration, retrying=True)
+            self._register(registration.demand)
+            if not self._ready:
+                return
+
+    def _retry_now(self):
+        now = monotonic()
+        for signal in self._retry_due:
+            self._retry_due[signal] = now
+
+    def _retire(self, registration, *, retrying=False):
         signal, id = registration.demand.signal, registration.id
+        if not retrying:
+            self._retry_attempts.pop(signal, None)
+            self._retry_due.pop(signal, None)
+            self._snapshot_exclusions.pop(signal, None)
+            self._snapshot_rebuilds.discard(signal)
         if signal.input_id is not None:
             self._inputs.unsubscribe(signal)
         elif signal.client_data_region is not None:
             if self._pending is not None and self._pending.command.client_data_region == signal.client_data_region:
                 self._complete_command(Outcome.UNCERTAIN, "The Client Data subscription ended before verification.")
             self._client_data.unsubscribe(signal)
+        elif signal.snapshot is not None:
+            state = self._snapshots.pop(signal, None)
+            if state is not None:
+                self._clear_snapshot(state)
         elif signal.event:
-            if id not in self._lifecycle_events and self._system_event_ids.pop(signal, None) is not None:
-                self._call("SimConnect_UnsubscribeFromSystemEvent", id)
+            # Only tear down the subscription this registration owns. The mapping may
+            # instead hold a lifecycle id retained after this registration failed;
+            # that subscription stays live and mapped, and _register reuses it.
+            if id not in self._lifecycle_events and self._system_event_ids.get(signal) == id:
+                del self._system_event_ids[signal]
+                self._teardown("SimConnect_UnsubscribeFromSystemEvent", id)
+            if id not in self._lifecycle_events:
                 self._disabled_events.discard(id)
         elif signal.system_state:
             for request, (active, _) in tuple(self._state_requests.items()):
@@ -419,33 +764,200 @@ class SimConnectProvider:
                     del self._state_requests[request]
         else:
             if id in self._simvar_requests:
-                self._call(
+                self._simvar_requests.remove(id)
+                self._teardown(
                     "SimConnect_RequestDataOnSimObject", id, id, _USER_AIRCRAFT, Period.NEVER, 0, 0, 0, 0,
                 )
-                self._simvar_requests.remove(id)
             if id in self._simvar_definitions:
-                self._call("SimConnect_ClearDataDefinition", id)
                 self._simvar_definitions.remove(id)
+                self._teardown("SimConnect_ClearDataDefinition", id)
         del self._registrations[signal]
         del self._by_id[id]
         self._failed.discard(id)
 
-    def _define(self, id, signal, *, registration_id=None):
+    def _teardown(self, name, *args):
+        """Send a cleanup call. A failure, now or as a late exception, is only logged."""
+        try:
+            packet = self._call(name, *args)
+        except ProviderError as error:
+            _LOG.warning("SimConnect cleanup call %s failed: %s", name, error)
+        else:
+            self._ledger[packet] = f"cleanup {name}"
+
+    def _define(self, id, signal, *, registration_id=None, datum_id=_UNUSED):
         datatype, _ = self._simvar_encoding(signal)
         args = (
             id, signal.name.encode("ascii"), signal.unit.encode("ascii") if signal.unit else None,
-            datatype, 0.0, _UNUSED,
+            datatype, 0.0, datum_id,
         )
         if registration_id is None:
-            self._call("SimConnect_AddToDataDefinition", *args)
-        else:
-            self._call_registration(registration_id, "SimConnect_AddToDataDefinition", *args)
+            return self._call("SimConnect_AddToDataDefinition", *args)
+        return self._call_registration(registration_id, "SimConnect_AddToDataDefinition", *args)
 
     @staticmethod
     def _simvar_encoding(signal):
         if signal.simvar_format is not None:
             return _SIMVAR_FORMATS[signal.simvar_format]
+        if signal in FREQUENCY_HZ_SIGNALS:
+            # COM frequencies are read as FLOAT64 Hz and rounded to whole Hz on
+            # receipt (contract C6); INT32 would truncate e.g. 128009999.99.
+            return _FREQUENCY_ENCODING
         return _DATATYPES[signal.value_type]
+
+    # Snapshots ----------------------------------------------------------------
+
+    def _snapshot_field(self, spec, position):
+        return spec.fields[position] if position < len(spec.fields) else _SNAPSHOT_CLOCKS[position - len(spec.fields)]
+
+    @staticmethod
+    def _snapshot_clocks(spec):
+        """Clock fields of a snapshot definition (none for changed_only, see _SNAPSHOT_CLOCKS)."""
+        return () if spec.changed_only else _SNAPSHOT_CLOCKS
+
+    def _define_snapshot(self, registration, excluded):
+        """Build one multi-datum definition and one request for a SnapshotSpec."""
+        signal = registration.demand.signal
+        spec = signal.snapshot
+        total = len(spec.fields) + len(self._snapshot_clocks(spec))
+        positions = tuple(position for position in range(total) if position not in excluded)
+        if not any(position < len(spec.fields) for position in positions):
+            raise ProviderError("SimConnect rejected every field of the snapshot.")
+        decoder = Struct("<" + "".join(
+            self._simvar_encoding(self._snapshot_field(spec, position))[1].format.lstrip("<")
+            for position in positions
+        ))
+        flags = DATA_REQUEST_FLAG_CHANGED if spec.changed_only else 0
+        state = _SnapshotState(signal, registration.id, self._new_id(), self._new_id(), positions, decoder,
+                               flags, set(excluded))
+        self._snapshots[signal] = state
+        self._snapshot_requests[state.request] = state
+        try:
+            for datum, position in enumerate(positions):
+                packet = self._define(state.definition, self._snapshot_field(spec, position), datum_id=datum)
+                self._snapshot_field_packets[packet] = (state, position)
+            packet = self._call(
+                "SimConnect_RequestDataOnSimObject",
+                state.request, state.definition, _USER_AIRCRAFT, _SNAPSHOT_PERIODS[spec.period], flags, 0,
+                spec.every - 1, 0,
+            )
+        except ProviderError:
+            self._snapshots.pop(signal, None)
+            self._clear_snapshot(state)
+            raise
+        self._snapshot_field_packets[packet] = (state, None)
+        state.requested = True
+        return state
+
+    def _clear_snapshot(self, state):
+        self._snapshot_requests.pop(state.request, None)
+        if state.requested:
+            state.requested = False
+            self._teardown("SimConnect_RequestDataOnSimObject", state.request,
+                           state.definition, _USER_AIRCRAFT, Period.NEVER, 0, 0, 0, 0)
+        self._teardown("SimConnect_ClearDataDefinition", state.definition)
+
+    def _snapshot_field_rejected(self, state, position, detail):
+        """Record a field SimConnect refused; the snapshot is rebuilt without it.
+
+        ``position`` None means SimConnect refused the request itself; the
+        snapshot then reports an error and is retried with backoff.
+
+        Field refusals are collected and the definition is rebuilt once at the
+        end of the drain, so several refused fields cost one rebuild. A refusal
+        that names an earlier definition of the same registration (it was
+        rebuilt before this exception arrived) still excludes the field, because
+        each rebuild re-added it.
+        """
+        signal = state.signal
+        registration = self._registrations.get(signal)
+        if registration is None or registration.id != state.registration_id or registration.id in self._failed:
+            _LOG.warning("Ignored a late SimConnect exception for a retired snapshot: %s", detail)
+            return
+        if position is None:
+            if self._snapshots.get(signal) is not state:
+                _LOG.warning("Ignored a late SimConnect exception for a replaced snapshot request: %s", detail)
+                return
+            state.requested = False
+            self._mark_failed(registration)
+            self._reading(signal, None, error=detail)
+            return
+        name = self._snapshot_field(signal.snapshot, position).name
+        _LOG.warning("SimConnect refused snapshot field %s: %s", name, detail)
+        self._snapshot_exclusions.setdefault(signal, set()).add(position)
+        self._snapshot_rebuilds.add(signal)
+
+    def _forget_total_refusal(self, signal):
+        """When every field was refused, let the backoff retry try them all again.
+
+        A partial refusal is remembered; a total one more likely means the
+        aircraft or simulator was not ready, and remembering it would make every
+        retry fail without asking SimConnect.
+        """
+        excluded = self._snapshot_exclusions.get(signal)
+        if excluded is not None and all(position in excluded for position in range(len(signal.snapshot.fields))):
+            del self._snapshot_exclusions[signal]
+
+    def _rebuild_snapshots(self):
+        for signal in tuple(self._snapshot_rebuilds):
+            self._snapshot_rebuilds.discard(signal)
+            registration = self._registrations.get(signal)
+            if registration is None or registration.id in self._failed:
+                continue
+            excluded = self._snapshot_exclusions.get(signal, set())
+            state = self._snapshots.get(signal)
+            if state is not None and excluded <= state.excluded:
+                continue  # Already built without every refused field.
+            if state is not None:
+                self._snapshots.pop(signal)
+                self._clear_snapshot(state)
+            try:
+                self._define_snapshot(registration, excluded)
+            except ProviderError as error:
+                self._snapshots.pop(signal, None)
+                self._forget_total_refusal(signal)
+                self._mark_failed(registration)
+                self._reading(signal, None, error=f"{error} Refused fields: {len(excluded)}.")
+            if not self._ready:
+                return
+
+    def _receive_snapshot(self, state, prefix, packet):
+        signal = state.signal
+        registration = self._registrations.get(signal)
+        if registration is None or registration.id in self._failed:
+            return
+        spec = signal.snapshot
+        offset = sizeof(ReceiveSimObjectDataPrefix)
+        decoder = state.decoder
+        if (prefix.definition_id != state.definition or prefix.flags & ~state.flags & 0xFFFFFFFF
+                or prefix.definition_count not in (len(state.positions), (decoder.size + 7) // 8)
+                or len(packet) < offset + decoder.size):
+            self._reading(signal, None, error="Invalid SimConnect snapshot definition or payload.")
+            return
+        raw = decoder.unpack_from(packet, offset)
+        values = [None] * (len(spec.fields) + len(_SNAPSHOT_CLOCKS))
+        for position, value in zip(state.positions, raw):
+            values[position] = self._snapshot_value(self._snapshot_field(spec, position), value)
+        simulation_time, absolute_time, rate = values[len(spec.fields):]
+        sample_time = simulator_utc(absolute_time)
+        frame = SnapshotFrame(tuple(values[:len(spec.fields)]), simulation_time, absolute_time, rate)
+        self._retry_attempts.pop(signal, None)
+        self._offer(Reading(
+            self._session, signal, frame, datetime.now(timezone.utc), monotonic(), sample_time=sample_time,
+        ))
+
+    @staticmethod
+    def _snapshot_value(signal, value):
+        if isinstance(value, bytes):
+            return _text_value(value)
+        if type(value) is float and not isfinite(value):
+            return None
+        if signal.value_type is ValueType.BOOLEAN:
+            return bool(value)
+        if signal in FREQUENCY_HZ_SIGNALS:
+            return round(value)
+        return value
+
+    # Commands -----------------------------------------------------------------
 
     def send(self, command):
         if not self._ready or command.session_id != self._session:
@@ -489,10 +1001,10 @@ class SimConnectProvider:
                 self._ready = False
                 self._offer(Disconnect(self._session, f"SimConnect command preparation failed: {error}"))
             raise CommandRejected(str(error)) from error
-        self._call(function, *arguments)
-        sent_packet = self._sdk.last_packet_id(self._handle)
+        sent_packet = self._call(function, *arguments)
+        self._ledger[sent_packet] = f"command {command.operation} ({command.id})"
         now = monotonic()
-        timeout = max(self._readback_timeout, 4.0) if response_id is not None else self._readback_timeout
+        timeout = max(self._readback_timeout, _RESPONSE_TIMEOUT) if response_id is not None else self._readback_timeout
         self._pending = _PendingCommand(
             command, sent_packet, readback, now + timeout, now,
             mapped_event_id=arguments[1] if function.startswith("SimConnect_TransmitClientEvent") else None,
@@ -554,6 +1066,8 @@ class SimConnectProvider:
                  _DEFAULT_GROUP_PRIORITY, _GROUP_IS_PRIORITY),
                 None,
             )
+        if not self._has("SimConnect_TransmitClientEvent_EX1"):
+            raise CommandRejected("The selected SimConnect.dll cannot send events with several arguments.")
         words = arguments + (0,) * (5 - len(arguments))
         return (
             "SimConnect_TransmitClientEvent_EX1",
@@ -583,10 +1097,11 @@ class SimConnectProvider:
         except ProviderError as error:
             raise CommandRejected(str(error)) from error
         data = create_string_buffer(packed, len(packed))
+        rel_tol = _FLOAT_READBACK_REL_TOL if encoder.format in ("<d", "<f") else 0.0
         return (
             "SimConnect_SetDataOnSimObject",
             (definition, _USER_AIRCRAFT, 0, 1, len(packed), data),
-            _Readback(definition, encoder, (value,), signal.name),
+            _Readback(definition, encoder, (value,), signal.name, rel_tol=rel_tol),
         )
 
     def _map_event(self, operation):
@@ -596,12 +1111,15 @@ class SimConnectProvider:
         if event_id is None:
             event_id = self._new_id()
             try:
-                self._call("SimConnect_MapClientEventToSimEvent", event_id, operation.encode("ascii"))
+                packet = self._call("SimConnect_MapClientEventToSimEvent", event_id, operation.encode("ascii"))
             except ProviderError as error:
                 raise CommandRejected(str(error)) from error
             self._event_ids[operation] = event_id
-            self._event_map_packets[self._sdk.last_packet_id(self._handle)] = (operation, event_id)
+            self._event_map_packets[packet] = (operation, event_id)
         return event_id
+
+    def _single_field_write_definition(self, definition):
+        return any(len(signals) == 1 and known == definition for signals, known in self._write_definitions.items())
 
     def _write_definition(self, signals):
         definition = self._write_definitions.get(signals)
@@ -610,8 +1128,8 @@ class SimConnectProvider:
         if definition is None:
             definition = self._new_id()
             for signal in signals:
-                self._define(definition, signal)
-                self._write_definition_packets[self._sdk.last_packet_id(self._handle)] = definition
+                packet = self._define(definition, signal)
+                self._write_definition_packets[packet] = definition
             self._write_definitions[signals] = definition
         return definition
 
@@ -620,65 +1138,118 @@ class SimConnectProvider:
             if len(command.arguments) != 1:
                 raise CommandRejected("Supply one COM1 standby frequency in Hz.")
             frequency = command.arguments[0]
-            if type(frequency) is not int or not self._in_com_band(frequency):
-                raise CommandRejected("COM1 requires an integer frequency in its VHF band.")
+            problem = com_channel_problem(frequency)
+            if problem is not None:
+                raise CommandRejected(problem)
         elif command.operation != _SWAP or command.arguments:
             raise CommandRejected("Unsupported COM1 command or arguments.")
-        definition = self._write_definition((COM1_ACTIVE, COM1_STANDBY))
-        active, standby = self._read_radio_baseline(definition)
+        definition = self._write_definition(_COM1_PAIR)
+        active, standby, spacing = self._read_radio_baseline(definition)
         if command.operation == _SET_STANDBY:
-            return _Readback(definition, _RADIO_PAIR, (None, frequency), "COM1 frequencies")
-        return _Readback(definition, _RADIO_PAIR, (standby, active), "COM1 frequencies")
+            # Same channel rule as Core and SimulatedProvider (contract C6): a radio
+            # known to use 25 kHz spacing refuses an 8.33 kHz channel before sending.
+            problem = com_channel_problem(frequency, spacing)
+            if problem is not None:
+                raise CommandRejected(problem)
+            return _Readback(definition, _RADIO_PAIR, (None, _com_readback_options(frequency, standby)),
+                             "COM1 frequencies", int_tol=_COM_RADIO_INT_TOL, round_hz=True)
+        return _Readback(definition, _RADIO_PAIR, (standby, active), "COM1 frequencies",
+                         int_tol=_COM_RADIO_INT_TOL, round_hz=True)
+
+    def _radio_spacing_definition(self):
+        """The COM SPACING MODE:1 definition, or None once SimConnect refused it."""
+        try:
+            definition = self._write_definition(_COM1_SPACING)
+        except CommandRejected:
+            return None
+        self._spacing_definition = definition
+        return definition
 
     def _read_radio_baseline(self, definition):
+        """Read the COM1 pair and, when available, its channel spacing (None if unknown)."""
+        spacing_definition = self._radio_spacing_definition()
         self._before_request, self._before_packet = self._request_readback(definition)
         self._before_definition = definition
         self._before_reading = None
         self._before_error = None
+        self._spacing_value = None
+        if spacing_definition is not None:
+            try:
+                self._spacing_request, self._spacing_packet = self._request_readback(spacing_definition)
+            except ProviderError as error:
+                _LOG.info("COM1 spacing is unknown for this command: %s", error)
+            else:
+                self._spacing_value = _SPACING_PENDING
         deadline = monotonic() + self._baseline_timeout
+        budget = _BASELINE_PACKET_BUDGET
+        pair = None
         try:
             while self._ready and monotonic() < deadline:
+                if pair is None and self._before_reading is not None:
+                    if not all(map(self._in_com_band, self._before_reading)):
+                        break
+                    pair = self._before_reading
+                if pair is not None and self._spacing_value is not _SPACING_PENDING:
+                    return (*pair, self._spacing_value)
+                if not budget:
+                    raise CommandRejected("SimConnect receive backlog prevented the COM1 baseline read.")
                 packet = self._next()
                 if packet is None:
-                    sleep(0.005)
+                    self._idle(0.005)
                     continue
+                budget -= 1
                 self._process(*packet)
                 if self._before_error is not None:
                     raise CommandRejected(self._before_error)
-                if self._before_reading is not None:
-                    if all(map(self._in_com_band, self._before_reading)):
-                        return self._before_reading
-                    break
+            if pair is None and self._before_reading is not None and all(map(self._in_com_band, self._before_reading)):
+                pair = self._before_reading
+            if pair is not None:
+                # The pair arrived but the spacing did not: proceed with it unknown.
+                return (*pair, None)
         finally:
+            if self._before_packet is not None:
+                self._ledger[self._before_packet] = "COM1 baseline read"
+            if self._spacing_packet is not None:
+                self._ledger[self._spacing_packet] = "COM1 spacing read"
             self._before_request = None
             self._before_packet = None
             self._before_definition = None
             self._before_reading = None
             self._before_error = None
+            self._spacing_request = None
+            self._spacing_packet = None
+            self._spacing_value = _SPACING_PENDING
         raise CommandRejected("No valid fresh COM1 baseline was available for the command.")
 
     @staticmethod
     def _in_com_band(value):
-        return 118_000_000 <= value < 137_000_000
+        return _COM_BAND[0] <= value < _COM_BAND[1]
 
     def _request_readback(self, definition, client_data_id=None):
         id = self._new_id()
         if client_data_id is None:
-            self._call(
+            packet = self._call(
                 "SimConnect_RequestDataOnSimObject", id, definition,
                 _USER_AIRCRAFT, Period.ONCE, 0, 0, 0, 0,
             )
         else:
-            self._call(
+            packet = self._call(
                 "SimConnect_RequestClientData", client_data_id, id, definition,
                 ClientDataPeriod.ONCE, 0, 0, 0, 0,
             )
-        return id, self._sdk.last_packet_id(self._handle)
+        return id, packet
+
+    # Drain --------------------------------------------------------------------
 
     def drain(self, limit):
         transport_empty = False
         if self._ready:
-            for _ in range(limit):
+            started = perf_counter()
+            for processed in range(limit):
+                if self._queued() >= limit:
+                    break  # Back-pressure: leave the rest in SimConnect's queue.
+                if processed >= _DRAIN_MIN_PACKETS and perf_counter() - started > _DRAIN_TIME_BUDGET_S:
+                    break  # Bound one pump's work; the rest is read on the next pump.
                 packet = self._next()
                 if packet is None:
                     transport_empty = True
@@ -686,6 +1257,11 @@ class SimConnectProvider:
                 self._process(*packet)
                 if not self._ready:
                     break
+        take_dropped = getattr(self._sdk, "take_dropped", None)
+        if take_dropped is not None:
+            self._dropped += take_dropped()
+        if self._ready:
+            self._rebuild_snapshots()
         if self._ready:
             self._inputs.expire()
             self._client_data.expire()
@@ -697,14 +1273,23 @@ class SimConnectProvider:
                 if monotonic() >= deadline:
                     del self._state_requests[request]
                     self._reading(signal, None, error="SimConnect system state request timed out.")
+            self._retry_failed_registrations()
+        if self._ready:
             self._advance_readback()
         batch = []
         if self._dropped:
             batch.append(IngressGap(self._session, self._dropped))
             self._dropped = 0
-        while self._updates and len(batch) < limit:
-            batch.append(self._updates.popleft())
+        control, data = self._control, self._data
+        while (control or data) and len(batch) < limit:
+            if not data or (control and control[0][0] < data[0][0]):
+                batch.append(control.popleft()[1])
+            else:
+                batch.append(data.popleft()[1])
         return tuple(batch)
+
+    def _queued(self):
+        return len(self._control) + len(self._data)
 
     def _advance_readback(self):
         pending = self._pending
@@ -714,13 +1299,14 @@ class SimConnectProvider:
         readback = pending.readback
         if now >= pending.deadline:
             if pending.command.operation in ADVANCED_OPERATIONS:
-                self._complete_command(Outcome.UNVERIFIED, self._advanced.command_timeout(pending.command))
+                self._complete_command(Outcome.UNVERIFIED, self._advanced.command_timeout(pending))
             elif readback is None:
                 self._complete_command(
                     Outcome.UNVERIFIED, "The command was sent. This capability has no configured readback.",
                 )
             else:
-                self._complete_command(Outcome.UNCERTAIN, f"{readback.description} did not confirm the command.")
+                observed = "" if pending.observed is None else f" Last readback: {self._describe(pending.observed)}."
+                self._complete_command(Outcome.UNCERTAIN, f"{readback.description} did not confirm the command.{observed}")
         elif readback is not None and pending.request_id is None and now >= pending.next_read:
             try:
                 pending.request_id, pending.readback_packet = self._request_readback(
@@ -728,6 +1314,12 @@ class SimConnectProvider:
                 )
             except ProviderError as error:
                 self._complete_command(Outcome.UNCERTAIN, f"Could not request {readback.description}: {error}")
+
+    @staticmethod
+    def _describe(values):
+        return ", ".join(repr(value) if isinstance(value, bytes) else str(value) for value in values)
+
+    # Packets ------------------------------------------------------------------
 
     def _process(self, kind, packet):
         if kind == ReceiveId.QUIT:
@@ -739,6 +1331,8 @@ class SimConnectProvider:
             reply = self._advanced.command_reply(self._pending, kind, packet)
             if reply is not None:
                 self._complete_command(*reply)
+            elif kind == ReceiveId.ASSIGNED_OBJECT_ID:
+                self._advanced.late_assignment(packet)
         elif kind == ReceiveId.CONTROLLERS_LIST:
             self._advanced.receive_controllers(packet)
         elif kind == ReceiveId.EVENT and self._advanced.receive_input(packet):
@@ -750,8 +1344,8 @@ class SimConnectProvider:
         elif kind == ReceiveId.SIMOBJECT_DATA:
             self._receive_data(packet)
         elif kind == ReceiveId.CLIENT_DATA:
-            prefix = self._struct(ReceiveSimObjectDataPrefix, packet)
-            if not self._receive_readback(prefix, packet, client_data=True):
+            prefix = self._prefix(ReceiveSimObjectDataPrefix, packet, "Client Data")
+            if prefix is not None and not self._receive_readback(prefix, packet, client_data=True):
                 self._client_data.process(prefix, packet)
         elif kind == ReceiveId.SYSTEM_STATE:
             self._receive_system_state(packet)
@@ -760,16 +1354,24 @@ class SimConnectProvider:
         elif kind in (ReceiveId.EVENT, ReceiveId.EVENT_FILENAME, ReceiveId.EVENT_FRAME,
                       ReceiveId.EVENT_OBJECT, ReceiveId.EVENT_WEATHER_MODE, ReceiveId.CUSTOM_ACTION):
             self._receive_system_event(kind, packet)
-        else:
-            self._inputs.process(kind, packet)
+        elif not self._inputs.process(kind, packet):
+            _LOG.debug("Ignored SimConnect packet type %s.", kind)
+
+    def _prefix(self, cls, packet, label):
+        """Decode a routing prefix. An unattributable short packet is logged and dropped."""
+        if len(packet) < sizeof(cls):
+            _LOG.warning("Dropped a truncated SimConnect %s packet of %d bytes.", label, len(packet))
+            return None
+        return cls.from_buffer_copy(packet)
 
     def _receive_exception(self, error):
         detail = self._exception_detail(error)
+        send_id = error.send_id
         pending = self._pending
-        if pending is not None and error.send_id == pending.sent_packet:
+        if pending is not None and send_id == pending.sent_packet:
             self._complete_command(Outcome.REJECTED, detail)
             return
-        mapped_event = self._event_map_packets.pop(error.send_id, None)
+        mapped_event = self._event_map_packets.pop(send_id, None)
         if mapped_event is not None:
             event, event_id = mapped_event
             self._event_errors[event] = detail
@@ -777,61 +1379,90 @@ class SimConnectProvider:
             if pending is not None and pending.mapped_event_id == event_id:
                 self._complete_command(Outcome.REJECTED, detail)
             return
-        definition = self._write_definition_packets.get(error.send_id)
+        definition = self._write_definition_packets.get(send_id)
         if definition is not None:
             self._write_definition_errors[definition] = detail
+            if definition == self._spacing_definition:
+                # COM SPACING MODE is optional: the spacing is then unknown.
+                _LOG.info("SimConnect refused COM SPACING MODE:1; COM1 spacing is unknown: %s", detail)
+                if self._spacing_value is _SPACING_PENDING:
+                    self._spacing_value = None
+                return
             if definition == self._before_definition:
                 self._before_error = detail
             if pending is not None and pending.readback is not None and definition == pending.readback.definition:
-                self._complete_command(Outcome.UNCERTAIN, detail)
+                if self._single_field_write_definition(definition):
+                    # The only field was refused, so the definition is empty and
+                    # SetDataOnSimObject cannot have written anything.
+                    self._complete_command(
+                        Outcome.REJECTED, f"SimConnect refused the SimVar definition: {detail}")
+                else:
+                    self._complete_command(Outcome.UNCERTAIN, detail)
             return
-        if error.send_id == self._before_packet:
+        if send_id == self._before_packet:
             self._before_error = detail
             return
-        if pending is not None and error.send_id == pending.readback_packet:
+        if self._spacing_packet is not None and send_id == self._spacing_packet:
+            if self._spacing_value is _SPACING_PENDING:
+                self._spacing_value = None
+            return
+        if pending is not None and send_id == pending.readback_packet:
             self._complete_command(Outcome.UNCERTAIN, detail)
             return
-        if self._inputs.receive_exception(error.send_id, detail):
+        snapshot_field = self._snapshot_field_packets.pop(send_id, None)
+        if snapshot_field is not None:
+            self._snapshot_field_rejected(*snapshot_field, detail)
             return
-        if self._client_data.receive_exception(error.send_id, detail):
+        if self._inputs.receive_exception(send_id, detail):
             return
-        if self._client_events.receive_exception(error.send_id, detail):
+        if self._client_data.receive_exception(send_id, detail, error.exception):
             return
-        if self._advanced.receive_exception(error.send_id, detail):
+        if self._client_events.receive_exception(send_id, detail):
             return
-        if self._facilities.receive_exception(error.send_id, detail):
+        if self._advanced.receive_exception(send_id, detail):
             return
-        id, operation = self._sent_registrations.get(error.send_id, (None, None))
-        if id in self._lifecycle_events:
-            raise ProviderError(detail)
+        if self._facilities.receive_exception(send_id, detail):
+            return
+        id, operation = self._sent_registrations.get(send_id, (None, None))
+        if id is not None and id in self._lifecycle_events:
+            raise ProviderError(f"A required simulator lifecycle registration failed: {detail}")
         state = self._state_requests.pop(id, None)
         if state is not None:
             self._reading(state[0], None, error=detail)
             return
         registration = self._by_id.get(id)
-        if id is not None and registration is None:
-            return
         if registration is not None:
-            self._failed.add(id)
             signal = registration.demand.signal
             if operation == "SimConnect_SubscribeToSystemEvent":
                 self._system_event_ids.pop(signal, None)
                 self._disabled_events.discard(id)
-            elif operation == "SimConnect_AddToDataDefinition":
-                self._simvar_definitions.discard(id)
-                self._simvar_requests.discard(id)
             elif operation == "SimConnect_RequestDataOnSimObject":
+                # The request was refused, so it is not held; the definition still is,
+                # and the retry's retire clears it. After a refused AddToDataDefinition
+                # both ids stay recorded: the request was already sent, so the retire
+                # sends Period.NEVER and ClearDataDefinition (rejections are tolerated).
                 self._simvar_requests.discard(id)
+            if id not in self._failed:
+                self._mark_failed(registration)
             self._reading(signal, None, error=detail)
             return
-        raise ProviderError(detail)
+        owner = self._ledger.get(send_id)
+        if owner is None:
+            _LOG.warning("Ignored an unattributed SimConnect exception: %s", detail)
+        else:
+            _LOG.warning("Ignored a late SimConnect exception for %s: %s", owner, detail)
 
     def _receive_system_event(self, kind, packet):
-        event = self._struct(ReceiveEvent, packet)
+        event = self._prefix(ReceiveEvent, packet, "event")
+        if event is None:
+            return
         if event.event_id == self._system_event_ids.get(SYSTEM_EVENTS["FLIGHTLOADED"]):
             self._advanced.flight_changed()
         if event.event_id == self._system_event_ids.get(SYSTEM_EVENTS["OBJECTREMOVED"]):
             self._advanced.owned_object_removed(event.data)
+        if event.event_id in (self._system_event_ids.get(SYSTEM_EVENTS["FLIGHTLOADED"]),
+                              self._system_event_ids.get(SYSTEM_EVENTS["AIRCRAFTLOADED"])):
+            self._retry_now()  # A new aircraft or flight is a good moment to retry failed registrations.
         if self._inputs.aircraft_changed(event.event_id):
             if self._pending is not None and self._pending.command.input_id is not None:
                 self._complete_command(Outcome.UNCERTAIN, "Aircraft or flight changed after dispatch.")
@@ -845,6 +1476,7 @@ class SimConnectProvider:
         except ProviderError as error:
             self._reading(signal, None, error=str(error))
         else:
+            self._retry_attempts.pop(signal, None)
             self._reading(signal, value)
 
     def _system_event_value(self, signal, kind, event, packet):
@@ -872,7 +1504,9 @@ class SimConnectProvider:
         raise ProviderError(f"Unexpected SimConnect packet type for {signal.name}.")
 
     def _receive_system_state(self, packet):
-        prefix = self._struct(ReceiveRequest, packet)
+        prefix = self._prefix(ReceiveRequest, packet, "system state")
+        if prefix is None:
+            return
         request = self._state_requests.pop(prefix.request_id, None)
         if request is None:
             return
@@ -894,24 +1528,50 @@ class SimConnectProvider:
         return f"SimConnect exception {error.exception} for packet {error.send_id}, index {error.index}."
 
     def _receive_data(self, packet):
-        prefix = self._struct(ReceiveSimObjectDataPrefix, packet)
+        prefix = self._prefix(ReceiveSimObjectDataPrefix, packet, "object data")
+        if prefix is None:
+            return
         request = prefix.request_id
         if request == self._before_request:
             try:
-                self._before_reading = self._payload(prefix, packet, self._before_definition, 2, _RADIO_PAIR)
+                self._before_reading = _round_hz(
+                    self._payload(prefix, packet, self._before_definition, 2, _RADIO_PAIR))
             except ProviderError as error:
                 self._before_error = str(error)
             return
+        if self._spacing_request is not None and request == self._spacing_request:
+            self._spacing_request = None
+            try:
+                spacing, = self._payload(prefix, packet, self._spacing_definition, 1, _SPACING)
+            except ProviderError as error:
+                _LOG.info("COM1 spacing reply was invalid: %s", error)
+                spacing = None
+            self._spacing_value = spacing if spacing in (0, 1) else None
+            return
         if self._receive_readback(prefix, packet):
+            return
+        snapshot = self._snapshot_requests.get(request)
+        if snapshot is not None:
+            self._receive_snapshot(snapshot, prefix, packet)
             return
         registration = self._by_id.get(request)
         if registration is None or request in self._failed or registration.demand.signal.event:
             return
         signal = registration.demand.signal
+        if signal.snapshot is not None:
+            return
         _, decoder = self._simvar_encoding(signal)
-        value, = self._payload(prefix, packet, registration.id, 1, decoder)
+        try:
+            value, = self._payload(prefix, packet, registration.id, 1, decoder)
+            if signal in FREQUENCY_HZ_SIGNALS:
+                value, = _round_hz((value,))
+        except ProviderError as error:
+            # Contain a malformed reply to its own signal; the session continues.
+            self._reading(signal, None, error=str(error))
+            return
         if isinstance(value, bytes):
-            value = value.split(b"\0", 1)[0].decode("utf-8", errors="replace")
+            value = _text_value(value)
+        self._retry_attempts.pop(signal, None)
         self._reading(signal, value)
 
     def _receive_readback(self, prefix, packet, *, client_data=False):
@@ -927,28 +1587,50 @@ class SimConnectProvider:
                 values = (self._client_data.payload(prefix, packet, readback.definition, readback.decoder.size),)
             else:
                 values = self._payload(prefix, packet, readback.definition, len(readback.expected), readback.decoder)
+                if readback.round_hz:
+                    values = _round_hz(values)
         except ProviderError as error:
             self._complete_command(Outcome.UNCERTAIN, str(error))
             return True
+        pending.observed = values
         if readback.matches(values):
-            self._complete_command(Outcome.CONFIRMED, f"Observed the expected {readback.description}.")
+            self._complete_command(Outcome.CONFIRMED, self._confirmation(pending, values))
         else:
+            if pending.readback_packet is not None:
+                self._ledger[pending.readback_packet] = f"readback for command {pending.command.id}"
             pending.request_id = None
             pending.next_read = monotonic() + 0.1
         return True
 
     @staticmethod
+    def _confirmation(pending, values):
+        readback = pending.readback
+        detail = f"Observed the expected {readback.description}."
+        command = pending.command
+        if command.operation == _SET_STANDBY and command.arguments:
+            requested, stored = command.arguments[0], values[1]
+            if abs(stored - requested) > readback.int_tol:
+                detail += (f" The simulator stored {stored} Hz, the channel nearest the requested "
+                           f"{requested} Hz.")
+        return detail
+
+    @staticmethod
     def _payload(prefix, packet, definition, count, decoder):
         offset = sizeof(ReceiveSimObjectDataPrefix)
-        if (prefix.definition_id != definition or prefix.definition_count != count
+        # dwDefineCount is the datum count in practice; the SDK text describes
+        # it as the count of 8-byte elements. Accept either reading.
+        if (prefix.definition_id != definition or prefix.definition_count not in (count, (decoder.size + 7) // 8)
                 or prefix.flags or len(packet) < offset + decoder.size):
             raise ProviderError("Invalid SimConnect data definition or payload.")
         return decoder.unpack_from(packet, offset)
 
     def _complete_command(self, outcome, detail, data=None):
-        command = self._pending.command
+        pending = self._pending
         self._pending = None
-        self._offer(CommandOutcome(self._session, command.id, outcome, detail, data))
+        self._ledger[pending.sent_packet] = f"finished command {pending.command.operation} ({pending.command.id})"
+        if pending.readback_packet is not None:
+            self._ledger[pending.readback_packet] = f"readback for finished command {pending.command.id}"
+        self._offer(CommandOutcome(self._session, pending.command.id, outcome, detail, data))
 
     def _reading(self, signal, value, *, error=None):
         self._offer(Reading(
@@ -956,10 +1638,18 @@ class SimConnectProvider:
         ))
 
     def _offer(self, update):
-        if len(self._updates) >= 512:
-            self._updates.popleft()
-            self._dropped += 1
-        self._updates.append(update)
+        item = (next(self._sequence), update)
+        # Only periodic telemetry (SimVar, snapshot and Client Data values) is
+        # evictable. Discrete system events, client events and hardware input
+        # samples are one-off and go to the control lane with everything else.
+        if isinstance(update, Reading) and update.error is None and not update.signal.event:
+            if len(self._data) >= _DATA_CAP:
+                self._data.popleft()
+                self._dropped += 1
+            self._data.append(item)
+        else:
+            # Outcomes, replies, catalogs, error readings and Disconnect: never evicted.
+            self._control.append(item)
 
     def _new_id(self):
         id = next(self._ids)
@@ -968,13 +1658,17 @@ class SimConnectProvider:
         return id
 
     def _call(self, name, *args):
+        """Send one SDK call and attribute its packet. Returns the packet ID."""
         self._sdk.call(name, self._handle, *args)
+        packet = self._sdk.last_packet_id(self._handle)
+        self._last_sent = packet
+        self._ledger[packet] = name
+        return packet
 
     def _call_registration(self, id, name, *args):
-        self._call(name, *args)
-        self._sent_registrations[self._sdk.last_packet_id(self._handle)] = (id, name)
-        if len(self._sent_registrations) > 512:
-            del self._sent_registrations[next(iter(self._sent_registrations))]
+        packet = self._call(name, *args)
+        self._sent_registrations[packet] = (id, name)
+        return packet
 
     def _next(self):
         packet = self._sdk.next_packet(self._handle)

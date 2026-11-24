@@ -1,19 +1,25 @@
 """Session-scoped SimConnect Client Data bindings and subscriptions."""
 
+from __future__ import annotations
+
 from ctypes import sizeof
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import logging
 from struct import pack
 from time import monotonic
 
 from .client_data import ClientDataArea, ClientDataMode
 from .provider import CommandRejected, ProviderError, Reading, Signal
-from .simconnect_abi import ClientDataPeriod, ReceiveSimObjectDataPrefix
+from .simconnect_abi import EXCEPTION_ALREADY_CREATED, ClientDataPeriod, ReceiveSimObjectDataPrefix
+from .simconnect_ledger import PacketLedger
 
 
+_LOG = logging.getLogger(__name__)
 DATUM_ID = 1
 _TAGGED = 1
 _CREATOR_ONLY = 1
+_REQUEST_FLAG_CHANGED = 1  # SIMCONNECT_CLIENT_DATA_REQUEST_FLAG_CHANGED
 _READ_TIMEOUT = 3.0
 
 
@@ -22,6 +28,7 @@ class _Area:
     declaration: ClientDataArea
     id: int
     error: str | None = None
+    adopted: bool = False  # CreateClientData found the area already present (for example after reconnect).
 
 
 @dataclass(slots=True)
@@ -33,6 +40,7 @@ class ClientDataBinding:
     streaming: bool = False
     primed: bool = False
     error: str | None = None
+    request_flags: int = 0
 
     @property
     def region(self):
@@ -50,7 +58,7 @@ class SimConnectClientData:
         self._active: dict[Signal, ClientDataBinding] = {}
         self._streams: dict[int, ClientDataBinding] = {}
         self._reads: dict[int, tuple[ClientDataBinding, float]] = {}
-        self._sent: dict[int, tuple[str, object]] = {}
+        self._sent = PacketLedger()
 
     def subscribe(self, signal):
         region = signal.client_data_region
@@ -62,17 +70,20 @@ class SimConnectClientData:
             self._areas[region.area.name] = area
             try:
                 self._tracked(
-                    "area", area, "SimConnect_MapClientDataNameToID",
+                    "area_map", area, "SimConnect_MapClientDataNameToID",
                     region.area.name.encode("ascii"), area.id,
                 )
                 if region.area.create:
                     flags = _CREATOR_ONLY if region.area.creator_only else 0
                     self._tracked(
-                        "area", area, "SimConnect_CreateClientData", area.id, region.area.size, flags,
+                        "area_create", area, "SimConnect_CreateClientData", area.id, region.area.size, flags,
                     )
             except ProviderError as error:
                 area.error = str(error)
-        binding = ClientDataBinding(signal, area, self._new_id())
+        binding = ClientDataBinding(
+            signal, area, self._new_id(),
+            request_flags=_REQUEST_FLAG_CHANGED if signal.client_data_changed_only else 0,
+        )
         self._active[signal] = binding
         if area.error:
             self._unavailable(binding, area.error)
@@ -85,7 +96,7 @@ class SimConnectClientData:
             binding.started = True
             if signal.client_data_mode is not ClientDataMode.ONCE:
                 period = ClientDataPeriod[signal.client_data_mode.name]
-                self._request(binding, binding.definition, period, "stream", binding)
+                self._request(binding, binding.definition, period, "stream", binding, binding.request_flags)
                 binding.streaming = True
                 self._streams[binding.definition] = binding
         except ProviderError as error:
@@ -101,10 +112,20 @@ class SimConnectClientData:
         for request, (item, _) in tuple(self._reads.items()):
             if item is binding:
                 del self._reads[request]
-        if binding.streaming:
-            self._request(binding, binding.definition, ClientDataPeriod.NEVER, "retire", binding)
-        if binding.started:
-            self._tracked("retire", binding, "SimConnect_ClearClientDataDefinition", binding.definition)
+        # Cancel only what the simulator may hold. A failed cancel is logged:
+        # the binding's IDs are never reused, so stray packets are ignored.
+        try:
+            if binding.streaming and not binding.area.error:
+                self._request(binding, binding.definition, ClientDataPeriod.NEVER, "retire", binding)
+            if binding.started:
+                self._tracked("retire", binding, "SimConnect_ClearClientDataDefinition", binding.definition)
+        except ProviderError as error:
+            _LOG.warning("Client Data cleanup failed: %s", error)
+        area = binding.area
+        if area.error and not any(item.area is area for item in self._active.values()):
+            # Let a later subscription map the area again instead of staying poisoned.
+            if self._areas.get(area.declaration.name) is area:
+                del self._areas[area.declaration.name]
 
     def request_value(self, signal):
         binding = self._active.get(signal)
@@ -139,7 +160,8 @@ class SimConnectClientData:
         if binding is None or binding.error or binding.area.error:
             return
         try:
-            value = self.payload(prefix, packet, binding.definition, binding.region.size)
+            flags = 0 if request is not None else binding.request_flags
+            value = self.payload(prefix, packet, binding.definition, binding.region.size, flags)
         except ProviderError as error:
             binding.primed = False
             self._reading(binding, None, error=str(error))
@@ -149,32 +171,52 @@ class SimConnectClientData:
         self._reading(binding, value)
 
     @staticmethod
-    def payload(prefix, packet, definition, size):
+    def payload(prefix, packet, definition, size, allowed_flags=0):
         offset = sizeof(ReceiveSimObjectDataPrefix)
+        # dwSize may be rounded up to a DWORD boundary for odd-sized regions.
         if (prefix.definition_id != definition or prefix.definition_count != 1
-                or prefix.flags or len(packet) != offset + size):
+                or prefix.flags & ~allowed_flags & 0xFFFFFFFF
+                or not offset + size <= len(packet) <= offset + ((size + 3) & ~3)):
             raise ProviderError("Invalid Client Data definition or payload size.")
-        return packet[offset:]
+        return packet[offset:offset + size]
 
-    def receive_exception(self, send_id, detail):
+    def receive_exception(self, send_id, detail, code=None):
         tracked = self._sent.pop(send_id, None)
         if tracked is None:
             return False
         operation, key = tracked
         if operation == "retire":
-            raise ProviderError(detail)
-        if operation == "area":
+            _LOG.warning("SimConnect refused a Client Data cleanup call: %s", detail)
+            return True
+        if operation == "area_create" and code == EXCEPTION_ALREADY_CREATED:
+            # The area already exists, for example from before a reconnect. The
+            # map call succeeded, so keep using it. Payload size checks still
+            # guard against an existing area that is smaller than declared.
+            key.adopted = True
+            _LOG.info("Client Data area %s already existed; using it.", key.declaration.name)
+            return True
+        if operation in ("area", "area_map", "area_create"):
             key.error = detail
             for binding in self._active.values():
                 if binding.area is key:
+                    binding.streaming = False  # The simulator holds no stream for a failed area.
+                    self._streams.pop(binding.definition, None)
                     self._unavailable(binding, detail)
         elif operation == "read":
             request = self._reads.pop(key, None)
             if request is not None:
                 request[0].primed = False
                 self._reading(request[0], None, error=detail)
-        elif self._active.get(key.signal) is key:
-            self._unavailable(key, detail)
+        else:
+            if operation == "stream":
+                key.streaming = False
+                self._streams.pop(key.definition, None)
+            elif operation == "definition":
+                key.started = False
+                key.streaming = False
+                self._streams.pop(key.definition, None)
+            if self._active.get(key.signal) is key:
+                self._unavailable(key, detail)
         return True
 
     def expire(self):
@@ -185,10 +227,10 @@ class SimConnectClientData:
                 binding.primed = False
                 self._reading(binding, None, error="Client Data read timed out.")
 
-    def _request(self, binding, id, period, operation, key):
+    def _request(self, binding, id, period, operation, key, flags=0):
         self._tracked(
             operation, key, "SimConnect_RequestClientData", binding.area.id, id,
-            binding.definition, period, 0, 0, 0, 0,
+            binding.definition, period, flags, 0, 0, 0,
         )
 
     def _unavailable(self, binding, reason):
@@ -204,5 +246,3 @@ class SimConnectClientData:
     def _tracked(self, operation, key, function, *arguments):
         self._call(function, *arguments)
         self._sent[self._last_packet()] = (operation, key)
-        if len(self._sent) > 512:
-            del self._sent[next(iter(self._sent))]

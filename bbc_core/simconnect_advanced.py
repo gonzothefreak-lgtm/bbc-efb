@@ -1,8 +1,12 @@
 """Advanced SDK requests, hardware mappings and object operations."""
 
-from ctypes import c_float, create_string_buffer, sizeof
+from __future__ import annotations
+
+from ctypes import create_string_buffer, sizeof
 from dataclasses import dataclass, field
+import logging
 from math import isfinite
+from re import sub
 from struct import Struct
 from time import monotonic
 from uuid import uuid4
@@ -16,6 +20,7 @@ from .simconnect_abi import (
     ReceiveEvent, ReceiveId, ReceiveListPrefix, ReceiveRequest, ReceiveReservedKey, ReceiveSimObjectDataPrefix,
 )
 from .simconnect_facility_lists import ListPages
+from .simconnect_ledger import PacketLedger
 from .simulator_ops import (
     ControllerInfo, HardwareSample, ObjectFormat, ObjectKind, ObjectSample, SimObjectRef, SimulatorOperation,
 )
@@ -47,10 +52,30 @@ _FLIGHT_COMMANDS = {
     SimulatorOperation.SAVE_FLIGHT: "SimConnect_FlightSave",
     SimulatorOperation.LOAD_FLIGHT_PLAN: "SimConnect_FlightPlanLoad",
 }
+OPERATION_EXPORTS = {
+    **{operation: (function,) for operation, function in _CREATE.items()},
+    **{operation: (function,) for operation, function in _OBJECT_COMMANDS.items()},
+    **{operation: (function,) for operation, function in _FLIGHT_COMMANDS.items()},
+    SimulatorOperation.RESERVE_KEY: ("SimConnect_RequestReservedKey", "SimConnect_MapClientEventToSimEvent"),
+    SimulatorOperation.EXECUTE_ACTION: ("SimConnect_ExecuteAction",),
+    SimulatorOperation.WRITE_OBJECT_DATA: ("SimConnect_SetDataOnSimObject", "SimConnect_AddToDataDefinition"),
+}
 _SILENT = {SimulatorOperation.SAVE_FLIGHT, SimulatorOperation.LOAD_FLIGHT_PLAN, SimulatorOperation.RESERVE_KEY}
 _CONTROLLER = Struct("<256sIII4H")
 _UNUSED = 0xFFFFFFFF
 _TIMEOUT = 8.0
+_LATE_CREATE_WINDOW_S = 600.0
+_HIGHEST_PRIORITY = 1  # SIMCONNECT_GROUP_PRIORITY_HIGHEST
+_LOG = logging.getLogger(__name__)
+
+
+def reserved_key_event_name(key):
+    """The client event name that delivers presses of a reserved key.
+
+    For a reservation returned as ``"Tab+Q"`` a module calls
+    ``subscribe_client_event("RESERVED_KEY_TAB_Q")``.
+    """
+    return "RESERVED_KEY_" + sub(r"[^A-Z0-9]+", "_", key.upper()).strip("_")
 
 
 def _text(raw):
@@ -73,33 +98,37 @@ class _Read:
 
 
 class SimConnectAdvanced:
-    def __init__(self, session, call, last_packet, new_id, offer, reading, encoding):
+    def __init__(self, session, call, last_packet, new_id, offer, reading, encoding, *, private_event=None):
         self._session = session
         self._call, self._last_packet, self._new_id = call, last_packet, new_id
         self._offer, self._reading, self._encoding = offer, reading, encoding
+        self._private_event = private_event
         self._requests: dict[int, _Read] = {}
         self._definitions = {}
         self._definition_errors = {}
-        self._sent = {}
+        self._sent = PacketLedger()
         self._controllers: _Read | None = None
         self._controller_pages = ListPages()
         self._controller_error = ""
         self._controller_reply_id = None
         self._group = None
+        self._notify_group = None
         self._bindings = {}
         self._keys = {}
         self._failed_inputs = set()
         self._owned = {}
         self._reservation_unknown = False
+        self._reservations: dict[str, int] = {}  # RESERVE_KEY command ID -> private event ID
+        self._late_creates = PacketLedger(_LATE_CREATE_WINDOW_S)  # create callback ID -> consumer ID
 
     def _track(self, category, item):
         self._sent[self._last_packet()] = category, item
-        if len(self._sent) > 4096:
-            del self._sent[next(iter(self._sent))]
 
-    def _define(self, field):
+    def _define(self, field, *, for_command=False):
         if field in self._definition_errors:
-            raise ProviderError(self._definition_errors[field])
+            # A consumer-supplied field the simulator refused is the consumer's
+            # problem: reject the command rather than end the shared session.
+            raise (CommandRejected if for_command else ProviderError)(self._definition_errors[field])
         if isinstance(field, SimVar):
             name, unit = field.sdk_name, field.unit
             datatype, decoder = self._encoding(Signal(name, unit, field.value_type, simvar_format=field.format))
@@ -233,14 +262,27 @@ class SimConnectAdvanced:
         self._controller_pages = ListPages()
         self._controller_reply_id = None
 
+    def _cleanup(self, function, *arguments):
+        """Send a cleanup call. A failure is logged and never ends the session.
+
+        Once the key mapping is removed locally, any packet the simulator still
+        delivers for it matches nothing and is ignored.
+        """
+        try:
+            self._call(function, *arguments)
+        except ProviderError as error:
+            _LOG.warning("SimConnect input cleanup %s failed: %s", function, error)
+        else:
+            self._track("input_cleanup", None)
+
     def replace_inputs(self, desired):
         self._failed_inputs.intersection_update(desired)
         removed = set(self._bindings).difference(desired)
         if removed and len(removed) == len(self._bindings):
-            self._call("SimConnect_SetInputGroupState", self._group, 0)
-            self._track("input_cleanup", None)
-            self._call("SimConnect_ClearInputGroup", self._group)
-            self._track("input_cleanup", None)
+            self._cleanup("SimConnect_SetInputGroupState", self._group, 0)
+            self._cleanup("SimConnect_ClearInputGroup", self._group)
+            if self._notify_group is not None:
+                self._cleanup("SimConnect_ClearNotificationGroup", self._notify_group)
             self._bindings.clear()
             self._keys.clear()
         else:
@@ -248,8 +290,9 @@ class SimConnectAdvanced:
                 ids = self._bindings.pop(signal)
                 for id in ids:
                     self._keys.pop(id, None)
-                self._call("SimConnect_RemoveInputEvent", self._group, signal.hardware_input.sdk_name.encode("ascii"))
-                self._track("input_cleanup", None)
+                    if id != _UNUSED and self._notify_group is not None:
+                        self._cleanup("SimConnect_RemoveClientEvent", self._notify_group, id)
+                self._cleanup("SimConnect_RemoveInputEvent", self._group, signal.hardware_input.sdk_name.encode("ascii"))
         for signal in desired:
             if signal not in self._bindings and signal not in self._failed_inputs:
                 self._bind(signal)
@@ -258,24 +301,33 @@ class SimConnectAdvanced:
         control = signal.hardware_input
         if self._group is None:
             self._group = self._new_id()
+        if self._notify_group is None:
+            # Private client events reach the client only through a notification
+            # group, as in the SDK's input and joystick samples.
+            self._notify_group = self._new_id()
         down = self._new_id()
         up = self._new_id() if control.control == "button" else _UNUSED
+        first = not self._bindings
         try:
             for id in (down, up):
                 if id != _UNUSED:
                     self._call("SimConnect_MapClientEventToSimEvent", id, b"")
                     self._track("input_setup", (signal, down))
+                    self._call("SimConnect_AddClientEventToNotificationGroup", self._notify_group, id, 0)
+                    self._track("input_setup", (signal, down))
             self._call("SimConnect_MapInputEventToClientEvent_EX1", self._group,
                        control.sdk_name.encode("ascii"), down, int(up != _UNUSED), up, 0, 0)
             self._track("input_map", (signal, down))
+            if first:
+                self._call("SimConnect_SetNotificationGroupPriority", self._notify_group, _HIGHEST_PRIORITY)
+                self._track("input_group", None)
+                self._call("SimConnect_SetInputGroupPriority", self._group, 2_000_000_000)
+                self._track("input_group", None)
+                self._call("SimConnect_SetInputGroupState", self._group, 1)
+                self._track("input_group", None)
         except ProviderError as error:
             self._fail_input(signal, str(error))
             return
-        if not self._bindings:
-            self._call("SimConnect_SetInputGroupPriority", self._group, 2_000_000_000)
-            self._track("input_group", None)
-            self._call("SimConnect_SetInputGroupState", self._group, 1)
-            self._track("input_group", None)
         self._bindings[signal] = (down, up)
         self._keys[down] = signal, True if up != _UNUSED else None
         if up != _UNUSED:
@@ -289,7 +341,8 @@ class SimConnectAdvanced:
         if mapping is None:
             return False
         signal, pressed = mapping
-        if event.group_id in (self._group, _UNUSED) and signal not in self._failed_inputs:
+        if (event.group_id in (self._notify_group, self._group, _UNUSED)
+                and signal not in self._failed_inputs):
             value = event.data - (1 << 32) if event.data & (1 << 31) else event.data
             self._reading(signal, HardwareSample(signal.hardware_input, value, pressed))
         return True
@@ -303,17 +356,22 @@ class SimConnectAdvanced:
         if tracked is None:
             return False
         operation, key = tracked
-        if operation in ("input_cleanup", "input_group"):
-            raise ProviderError(detail)
-        if operation in ("input_setup", "input_map"):
+        if operation == "input_cleanup":
+            _LOG.warning("SimConnect rejected a controller input cleanup call: %s", detail)
+        elif operation == "input_group":
+            # Without group priority or state no mapping can deliver input.
+            # Report every mapping as failed; the session continues.
+            for signal in tuple(self._bindings):
+                if signal not in self._failed_inputs:
+                    self._fail_input(signal, f"The simulator refused the controller input group: {detail}")
+        elif operation in ("input_setup", "input_map"):
             signal, down = key
             if self._bindings.get(signal, (None,))[0] == down:
                 if operation == "input_map":
                     for id in self._bindings.pop(signal):
                         self._keys.pop(id, None)
                     if not self._bindings:
-                        self._call("SimConnect_SetInputGroupState", self._group, 0)
-                        self._track("input_cleanup", None)
+                        self._cleanup("SimConnect_SetInputGroupState", self._group, 0)
                 if signal not in self._failed_inputs:
                     self._fail_input(signal, detail)
         elif operation == "definition":
@@ -321,6 +379,8 @@ class SimConnectAdvanced:
             for request, read in tuple(self._requests.items()):
                 if read.query.field == key:
                     self._publish(self._requests.pop(request), detail=detail)
+        elif operation in ("reservation_map", "late_remove"):
+            _LOG.warning("SimConnect rejected %s: %s", operation.replace("_", " "), detail)
         elif operation == "controllers":
             if self._controllers is not None and self._controllers.id == key:
                 self._finish_controllers(detail=detail, ambiguous=self._controller_reply_id is not None)
@@ -353,6 +413,7 @@ class SimConnectAdvanced:
             event_id = self._new_id()
             self._call("SimConnect_MapClientEventToSimEvent", event_id, b"")
             self._track("reservation_map", None)
+            self._reservations[command_key(command)] = event_id
             return "SimConnect_RequestReservedKey", (event_id, *args), _UNUSED
         if operation is SimulatorOperation.EXECUTE_ACTION:
             callback = self._new_id()
@@ -366,7 +427,7 @@ class SimConnectAdvanced:
             _, decoder = _STRUCTURES[field.format]
             if decoder is None or len(payload) != decoder.size:
                 raise CommandRejected("The packed structured data does not fit its fixed SDK format.")
-            definition, _ = self._define(field)
+            definition, _ = self._define(field, for_command=True)
             return "SimConnect_SetDataOnSimObject", (definition, target.object_id, 0, 1, len(payload),
                                                     self._buffer(payload)), None
         return _OBJECT_COMMANDS[operation], (target.object_id, *args[1:], self._new_id()), None
@@ -397,13 +458,45 @@ class SimConnectAdvanced:
             if len(packet) >= sizeof(ReceiveReservedKey):
                 reply = ReceiveReservedKey.from_buffer_copy(packet)
                 if not reply.choice:
+                    self._reservations.pop(command_key(pending.command), None)
                     return Outcome.REJECTED, "SimConnect returned no reserved key.", None
                 if reply.choice in pending.command.arguments and reply.key:
-                    return Outcome.CONFIRMED, "SimConnect returned a reserved key.", _text(reply.key)
+                    key = _text(reply.key)
+                    event_id = self._reservations.pop(command_key(pending.command), None)
+                    detail = "SimConnect returned a reserved key."
+                    if event_id is not None and self._private_event is not None:
+                        name = reserved_key_event_name(key)
+                        self._private_event(name, event_id)
+                        detail += f" Subscribe to client event {name} to receive its presses."
+                    return Outcome.CONFIRMED, detail, key
         return None
 
-    def command_timeout(self, command):
+    def late_assignment(self, packet):
+        """Handle an ASSIGNED_OBJECT_ID that arrived after its create command finished.
+
+        The consumer was told the create was unverified and holds no reference,
+        so Core adopts the object and removes it rather than leave an orphan.
+        """
+        if len(packet) < sizeof(ReceiveAssignedObject):
+            return
+        reply = ReceiveAssignedObject.from_buffer_copy(packet)
+        consumer = self._late_creates.pop(reply.request_id, None)
+        if consumer is None or reply.object_id in (0, _UNUSED):
+            return
+        _LOG.warning("Removing simulator object %s created after its command timed out.", reply.object_id)
+        try:
+            self._call("SimConnect_AIRemoveObject", reply.object_id, self._new_id())
+        except ProviderError as error:
+            _LOG.warning("Could not remove late simulator object %s: %s", reply.object_id, error)
+        else:
+            self._track("late_remove", reply.object_id)
+
+    def command_timeout(self, pending):
+        command = pending.command
         operation = OPERATIONS[command.operation]
+        self._reservations.pop(command_key(command), None)
+        if operation in _CREATE and pending.response_id is not None:
+            self._late_creates[pending.response_id] = command.consumer_id
         if operation is SimulatorOperation.RESERVE_KEY:
             self._reservation_unknown = True
         if operation is SimulatorOperation.REMOVE_OBJECT:
@@ -417,3 +510,8 @@ class SimConnectAdvanced:
 
     def flight_changed(self):
         self._owned.clear()
+        self._late_creates.clear()
+
+
+def command_key(command):
+    return command.id

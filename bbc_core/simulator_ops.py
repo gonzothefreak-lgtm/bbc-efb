@@ -1,18 +1,20 @@
 """Public types and validation for advanced SimConnect operations."""
 
+from __future__ import annotations
+
+import builtins
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
 from math import isfinite
 from pathlib import PureWindowsPath
 from re import fullmatch
 from struct import Struct
 
-from .contract import CoreRequestError, Source
+from .contract import CoreRequestError, Source, StrEnum
 from .sdk_simvar import SimVar
 
 
-class SimulatorOperation(str, Enum):
+class SimulatorOperation(StrEnum):
     RESERVE_KEY = "reserve_key"
     CREATE_PARKED_AIRCRAFT = "create_parked_aircraft"
     CREATE_ENROUTE_AIRCRAFT = "create_enroute_aircraft"
@@ -28,7 +30,7 @@ class SimulatorOperation(str, Enum):
     WRITE_OBJECT_DATA = "write_object_data"
 
 
-class ObjectKind(str, Enum):
+class ObjectKind(StrEnum):
     USER = "user"
     ALL = "all"
     AIRCRAFT = "aircraft"
@@ -37,7 +39,7 @@ class ObjectKind(str, Enum):
     GROUND = "ground"
 
 
-class ObjectFormat(str, Enum):
+class ObjectFormat(StrEnum):
     POSITION = "initial_position"
     LATLONALT = "latlonalt"
     WAYPOINT = "waypoint"
@@ -46,7 +48,7 @@ class ObjectFormat(str, Enum):
     VARIABLE_TEXT = "variable_text"
 
 
-class SimulatorReadState(str, Enum):
+class SimulatorReadState(StrEnum):
     PENDING = "pending"
     READY = "ready"
     UNAVAILABLE = "unavailable"
@@ -95,7 +97,9 @@ class ObjectField:
 @dataclass(frozen=True, slots=True)
 class ObjectSample:
     object: SimObjectRef
-    value: object
+    # builtins.object, not "object": under postponed annotations get_type_hints() would
+    # otherwise resolve the name to this class's own ``object`` field.
+    value: builtins.object
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,14 +195,27 @@ def encoded_text(value, label, *, limit=259, empty=False):
     return encoded
 
 
-def flight_path(value, suffix):
-    text = encoded_text(value, "flight file path")
+# The SDK says the .FLT/.PLN extension "need not" be entered for flight and plan files.
+# Whether MSFS 2020 also accepts it with the extension is not yet verified natively. Core
+# accepts both spellings from modules and sends this form; flip it only after a native probe.
+SEND_FLIGHT_FILE_EXTENSION = True
+
+
+def flight_path(value, suffix, *, send_extension=None):
+    """Validate an absolute local flight or plan path, with or without its extension."""
+    encoded_text(value, "flight file path")
     path = PureWindowsPath(value)
+    extension = path.suffix.casefold()
     if (not path.is_absolute() or len(path.drive) != 2 or path.drive[1] != ":"
-            or path.suffix.casefold() != suffix or ".." in path.parts
+            or extension not in ("", suffix) or ".." in path.parts or path.name.startswith(".")
             or any(char in value[2:] for char in ':*?"<>|\r\n')):
-        raise CoreRequestError(f"Supply an absolute local {suffix} path.")
-    return text
+        raise CoreRequestError(f"Supply an absolute local {suffix} path. The extension is optional.")
+    keep = SEND_FLIGHT_FILE_EXTENSION if send_extension is None else send_extension
+    if keep:
+        text = value if extension else value + suffix
+    else:
+        text = value[:-len(path.suffix)] if extension else value
+    return encoded_text(text, "flight file path")
 
 
 def operation_arguments(operation, arguments):

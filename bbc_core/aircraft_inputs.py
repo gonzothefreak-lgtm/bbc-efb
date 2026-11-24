@@ -1,5 +1,7 @@
 """Aircraft Input Event argument encoding for the Core API."""
 
+from __future__ import annotations
+
 from math import isfinite
 from struct import pack
 

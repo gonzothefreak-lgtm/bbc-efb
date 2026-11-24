@@ -3,12 +3,12 @@
 from ctypes import string_at
 from struct import pack, unpack
 from unittest import TestCase
-from unittest.mock import patch
 
 from bbc_core import CommandState, ConnectionState, Core, CoreRequestError, Quality, SimVar, SimVarFormat, ValueType
 from bbc_core.provider import ProviderError
 from bbc_core.simconnect import SimConnectProvider
 from bbc_core.simconnect_abi import DataType, Period
+from test_adapter_support import FakeClock
 from test_simconnect_provider_offline import FakeSdk
 
 
@@ -41,13 +41,9 @@ class GenericSdk(FakeSdk):
             self.exception(self.packet_id)
 
 
-class SdkSimVarOfflineTests(TestCase):
+class SdkSimVarOfflineTests(FakeClock, TestCase):
     def setUp(self):
-        self.now = 100.0
-        for target in ("bbc_core.core.monotonic", "bbc_core.simconnect.monotonic"):
-            timer = patch(target, side_effect=lambda: self.now)
-            timer.start()
-            self.addCleanup(timer.stop)
+        self.start_clock(100.0)  # Every bbc_core clock and simconnect.sleep (A139).
         self.sdk = GenericSdk()
         self.core = Core(SimConnectProvider(self.sdk))
         self.addCleanup(self.core.disconnect)

@@ -1,0 +1,99 @@
+# BBC EFB and Black Box Core.
+#
+# Developer setup (Windows PowerShell, 64-bit CPython 3.10 or later; 3.12 is the tested version):
+#
+#   py -3.12 -m venv .venv
+#   .\.venv\Scripts\Activate.ps1
+#   python -m pip install -e ".[ui]"
+#
+# Tests use the standard library unittest runner. No simulator, SimConnect.dll or
+# network access is needed:
+#
+#   $env:QT_QPA_PLATFORM = "offscreen"
+#   python -m unittest discover -s tests -t . -p "test_*.py"
+#
+# The guarded runner used by CI also blocks native DLL loads, sockets and
+# subprocesses while the suite runs:
+#
+#   python -B tests/test_repo_offline_guard.py
+#
+# SimConnect.dll is not bundled or installed by this package. The pilot's own
+# MSFS 2020 SDK copy is used (see reference/EXTERNAL_DEPENDENCIES_NOT_BUNDLED.md).
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bbc-efb"
+# The version has one source: VERSION in bbc_efb/__init__.py (PEP 440 form,
+# read statically by setuptools; see [tool.setuptools.dynamic] below).
+dynamic = ["version"]
+description = "BBC Integrated EFB and Black Box Core for Microsoft Flight Simulator 2020"
+readme = "README.md"
+# The code uses dataclass(slots=True), zip(strict=True) and runtime-evaluated
+# "X | None" annotations, which all need Python 3.10 or later.
+requires-python = ">=3.10"
+# Black Box Core (bbc_core) uses the standard library only.
+dependencies = []
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Games/Entertainment :: Simulation",
+]
+
+[project.optional-dependencies]
+# The EFB user interface. 6.8.3 is the tested release; the range stays on the
+# 6.8 series so a new PySide6 feature release is adopted deliberately.
+ui = ["PySide6>=6.8.3,<6.9"]
+
+[project.gui-scripts]
+bbc-efb = "bbc_efb.__main__:main"
+
+[tool.setuptools]
+# The packages hold Python code only. The Markdown files beside the code
+# (bbc_efb/STORAGE_SCHEMA.md, bbc_efb/logbook_views/LOGBOOK_VIEWS.md,
+# bbc_recorder/RULES.md) are developer documentation that no code reads at run
+# time, so no package data is installed.
+include-package-data = false
+
+# Every package and subpackage is found automatically: bbc_core, bbc_core.ipc,
+# bbc_efb, bbc_efb.logbook_views, bbc_efb.modules and bbc_recorder today.
+# Namespace packages are off, so a folder needs an __init__.py to ship (and
+# __pycache__ or data folders are never mistaken for packages).
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bbc_core*", "bbc_efb*", "bbc_recorder*"]
+exclude = ["*.__pycache__", "tests*", "tests_wip*", "packaging*", "reference*", "docs*", "sources*"]
+namespaces = false
+
+[tool.setuptools.dynamic]
+version = { attr = "bbc_efb.VERSION" }
+
+# Static checks (finding A89). Neither tool is installed by the project. CI runs
+# both (pinned) in the advisory "static-checks" job of .github/workflows/ci.yml,
+# which reports without failing until a first run has been reviewed and is clean.
+# These settings make a local run of `ruff check` or `mypy` match the project's
+# rules: Python 3.10 syntax, unused imports, likely bugs (bugbear) and outdated
+# syntax.
+[tool.ruff]
+# tests/test_core_static.py repeats the unused-import rule (F401) with the standard
+# library, so it is enforced by the normal test run even where ruff is not installed.
+target-version = "py310"
+line-length = 120
+extend-exclude = ["reference", "tests_wip"]
+
+[tool.ruff.lint]
+select = ["F", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["bbc_core"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true

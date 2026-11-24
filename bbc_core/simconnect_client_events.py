@@ -1,10 +1,18 @@
 """Shared, non-masking SimConnect client event reception."""
 
+from __future__ import annotations
+
 from ctypes import sizeof
+import logging
 
 from .contract import ClientEventData
 from .provider import ProviderError, Signal
 from .simconnect_abi import ReceiveEvent, ReceiveEventEx1, ReceiveEventHeader, ReceiveId
+from .simconnect_ledger import PacketLedger
+
+
+_LOG = logging.getLogger(__name__)
+_PRIVATE_PREFIX = "RESERVED_KEY_"
 
 
 _DEFAULT_PRIORITY = 2_000_000_000
@@ -25,7 +33,16 @@ class SimConnectClientEvents:
         self._by_id: dict[int, Signal] = {}
         self._failed: set[Signal] = set()
         self._add_packets: dict[Signal, int] = {}
-        self._sent: dict[int, tuple[str, Signal | None, int]] = {}
+        self._sent = PacketLedger()
+        # Private (unnamed) client events, such as a reserved key, by public name.
+        self._private: dict[str, int] = {}
+
+    def register_private(self, name, event_id):
+        """Make a private client event subscribable as ``subscribe_client_event(name)``."""
+        self._private[name] = event_id
+        for signal in tuple(self._failed):
+            if signal.name == name:
+                self._failed.discard(signal)
 
     def replace(self, desired):
         self._desired = desired
@@ -39,8 +56,12 @@ class SimConnectClientEvents:
                     event_id = self._members.pop(signal)
                     self._by_id.pop(event_id, None)
                     self._add_packets.pop(signal, None)
-                    self._call("SimConnect_RemoveClientEvent", self._group, event_id)
-                    self._track("remove")
+                    try:
+                        self._call("SimConnect_RemoveClientEvent", self._group, event_id)
+                    except ProviderError as error:
+                        self._cleanup_failed(f"RemoveClientEvent failed: {error}")
+                    else:
+                        self._track("remove")
 
     def activate_after_drain(self):
         """Discard queued packets before activating any newly requested mapping."""
@@ -61,7 +82,12 @@ class SimConnectClientEvents:
         if self._group is None:
             self._group = self._new_id()
         try:
-            event_id = self._map_event(signal.name)
+            if signal.name.startswith(_PRIVATE_PREFIX):
+                event_id = self._private.get(signal.name)
+                if event_id is None:
+                    raise ProviderError("No key reservation in this SimConnect session uses this event name.")
+            else:
+                event_id = self._map_event(signal.name)
             self._call("SimConnect_AddClientEventToNotificationGroup", self._group, event_id, 0)
         except ProviderError as error:
             self._fail(signal, str(error))
@@ -78,8 +104,12 @@ class SimConnectClientEvents:
                 self._track("priority")
 
     def _clear(self):
-        self._call("SimConnect_ClearNotificationGroup", self._group)
-        self._track("clear")
+        try:
+            self._call("SimConnect_ClearNotificationGroup", self._group)
+        except ProviderError as error:
+            self._cleanup_failed(f"ClearNotificationGroup failed: {error}")
+        else:
+            self._track("clear")
         self._members.clear()
         self._by_id.clear()
         self._add_packets.clear()
@@ -88,9 +118,21 @@ class SimConnectClientEvents:
     def _track(self, operation, signal=None):
         packet = self._last_packet()
         self._sent[packet] = operation, signal, self._generation
-        if len(self._sent) > 4096:
-            del self._sent[next(iter(self._sent))]
         return packet
+
+    def _cleanup_failed(self, detail):
+        """A remove or clear was refused. Keep the session; stop trusting the group.
+
+        Events from the old group still arrive with its group ID, which no
+        longer matches, so ``receive`` drops them. New members go to a fresh
+        group on the next activation.
+        """
+        _LOG.warning("SimConnect client event cleanup was refused; using a fresh notification group. %s", detail)
+        self._members.clear()
+        self._by_id.clear()
+        self._add_packets.clear()
+        self._generation += 1
+        self._group = None  # Wanted members are re-added to a new group after the next drain.
 
     def receive(self, kind, packet):
         if len(packet) < sizeof(ReceiveEventHeader):
@@ -114,7 +156,13 @@ class SimConnectClientEvents:
 
     def mapping_failed(self, event_id, detail):
         signal = self._by_id.pop(event_id, None)
-        if signal is not None:
+        if signal is None:
+            return
+        if self._members.get(signal) == event_id:
+            del self._members[signal]
+        # A later exception for the group add then matches nothing and is absorbed.
+        self._add_packets.pop(signal, None)
+        if signal not in self._failed:
             self._fail(signal, detail)
 
     def receive_exception(self, send_id, detail):
@@ -123,8 +171,10 @@ class SimConnectClientEvents:
             return False
         operation, signal, generation = item
         if operation in ("remove", "clear"):
-            # The server may still be delivering an unwanted subscription.
-            raise ProviderError(detail)
+            # The server may still deliver the unwanted event; the group is retired
+            # so those packets are dropped, and the session continues.
+            self._cleanup_failed(detail)
+            return True
         if generation == self._generation:
             if operation == "priority":
                 self._fail_group(detail)
