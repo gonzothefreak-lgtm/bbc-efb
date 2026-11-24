@@ -3,14 +3,14 @@
 from ctypes import string_at
 from struct import pack
 from unittest import TestCase
-from unittest.mock import patch
 
-from bbc_core import CommandState, ConnectionState, Core, CoreRequestError, InputCatalogState, ValueType
+from bbc_core import CommandState, ConnectionState, Core, CoreRequestError, InputCatalogState, Quality, ValueType
 from bbc_core.simconnect import SimConnectProvider
 from bbc_core.simconnect_abi import (
-    InputEventDescriptor, Receive, ReceiveEventFilename, ReceiveGetInputPrefix, ReceiveId,
+    DataType, InputEventDescriptor, Receive, ReceiveEventFilename, ReceiveGetInputPrefix, ReceiveId,
     ReceiveInputParameters, ReceiveListPrefix, ReceiveSubscribeInputPrefix,
 )
+from test_adapter_support import FakeClock
 from test_simconnect_provider_offline import FakeSdk, packet
 
 
@@ -53,14 +53,9 @@ class FakeInputSdk(FakeSdk):
         ))
 
 
-class AircraftInputOfflineTests(TestCase):
+class AircraftInputOfflineTests(FakeClock, TestCase):
     def setUp(self):
-        self.now = 100.0
-        for target in ("bbc_core.core.monotonic", "bbc_core.simconnect.monotonic",
-                       "bbc_core.simconnect_input_events.monotonic"):
-            clock = patch(target, side_effect=lambda: self.now)
-            clock.start()
-            self.addCleanup(clock.stop)
+        self.start_clock(100.0)  # Every bbc_core clock and simconnect.sleep (A139).
         self.sdk = FakeInputSdk()
         self.core = Core(SimConnectProvider(self.sdk))
         self.inputs = self.core.register_consumer(control_groups=("aircraft_inputs",))
@@ -74,7 +69,7 @@ class AircraftInputOfflineTests(TestCase):
 
     def discover(self):
         request = self.enumerate()
-        self.sdk.page(request, 0, 1, (b"TestControl", INPUT_HASH, 0))
+        self.sdk.page(request, 0, 1, (b"TestControl", INPUT_HASH, DataType.FLOAT64))
         self.core.pump()
         return self.inputs.aircraft_inputs().inputs[0].id
 
@@ -82,11 +77,11 @@ class AircraftInputOfflineTests(TestCase):
         self.core.pump()
         self.assertEqual(self.sdk.matching_calls("SimConnect_EnumerateInputEvents"), [])
         request = self.enumerate()
-        self.sdk.page(request, 1, 2, (b"TestText", TEXT_HASH, 1))
-        self.sdk.page(request, 1, 2, (b"TestText", TEXT_HASH, 1))
+        self.sdk.page(request, 1, 2, (b"TestText", TEXT_HASH, DataType.STRING128))
+        self.sdk.page(request, 1, 2, (b"TestText", TEXT_HASH, DataType.STRING128))
         self.core.pump()
         self.assertEqual(self.inputs.aircraft_inputs().state, InputCatalogState.LOADING)
-        self.sdk.page(request, 0, 2, (b"TestControl", INPUT_HASH, 0))
+        self.sdk.page(request, 0, 2, (b"TestControl", INPUT_HASH, DataType.FLOAT64))
         self.core.pump()
         catalog = self.inputs.aircraft_inputs()
         self.assertEqual(catalog.state, InputCatalogState.READY)
@@ -126,7 +121,7 @@ class AircraftInputOfflineTests(TestCase):
 
     def test_reads_fixed_text_and_rejects_a_malformed_value(self):
         request = self.enumerate()
-        self.sdk.page(request, 0, 1, (b"TestText", TEXT_HASH, 1))
+        self.sdk.page(request, 0, 1, (b"TestText", TEXT_HASH, DataType.STRING128))
         self.core.pump()
         ref = self.inputs.aircraft_inputs().inputs[0].id
         subscription = self.inputs.subscribe_input(ref)
@@ -190,8 +185,13 @@ class AircraftInputOfflineTests(TestCase):
         self.assertEqual(self.inputs.aircraft_inputs().state, InputCatalogState.UNAVAILABLE)
         self.assertEqual(self.inputs.command_result(sent.id).state, CommandState.UNCERTAIN)
         self.assertEqual(self.inputs.command_result(queued.id).state, CommandState.NOT_SENT)
-        with self.assertRaises(CoreRequestError):
-            self.inputs.latest(subscription.id)
+        # A86: the ended subscription reads as UNAVAILABLE with the reason, not as an error.
+        ended = self.inputs.latest(subscription.id)
+        self.assertIs(ended.quality, Quality.UNAVAILABLE)
+        self.assertIsNone(ended.value)
+        self.assertIn("aircraft inputs changed", ended.reason)
+        with self.assertRaisesRegex(CoreRequestError, "aircraft inputs changed"):
+            self.inputs.request_input_value(subscription.id)
         with self.assertRaises(CoreRequestError):
             self.inputs.subscribe_input(ref)
         self.assertEqual(len(self.sdk.matching_calls("SimConnect_SetInputEvent")), 1)
@@ -236,7 +236,7 @@ class AircraftInputOfflineTests(TestCase):
 
     def test_incomplete_catalog_times_out_without_publishing_partial_results(self):
         request = self.enumerate()
-        self.sdk.page(request, 0, 2, (b"TestControl", INPUT_HASH, 0))
+        self.sdk.page(request, 0, 2, (b"TestControl", INPUT_HASH, DataType.FLOAT64))
         self.core.pump()
         self.now += 4
         self.core.pump()

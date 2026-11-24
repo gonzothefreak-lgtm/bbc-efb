@@ -1,13 +1,16 @@
 """Fresh Black Box Core implementation."""
 
+from __future__ import annotations
+
 from .client_data import ClientDataArea, ClientDataMode, ClientDataRegion
 from .contract import (
     API_VERSION, AircraftInput, Capability, CapabilityStatus, ClientEventData, CommandParameter, CommandResult,
     CommandState, Connection, ConnectionState, CoreRequestError, Discovery, Event, FrameSample, Gap,
-    InputCatalog, InputCatalogState, InputId, InputParameters, Kind, MissionAction, Observation, Quality, Source,
-    SimObjectChange, Subscription, Update, ValueType,
+    InputCatalog, InputCatalogState, InputId, InputParameters, Kind, MissionAction, Observation, PauseState,
+    Quality, SignalError, SimObjectChange, Snapshot, SnapshotPeriod, Source, StrEnum, Subscription,
+    SubscriptionEnded, Update, ValueType, simulator_utc,
 )
-from .core import ConsumerAPI, Core
+from .core import ConsumerAPI, Core, known_control_groups
 from .facilities import (
     AirportDetails, AirportFilter, AirportFilterField, AirportJetway, AirportReference,
     FacilityCacheSubscription, FacilityCacheUpdate,
@@ -36,4 +39,6 @@ __all__ = [
     "ClientEventData",
     "ControllerInfo", "ControllerInput", "HardwareSample", "InitialPosition", "ObjectField", "ObjectFormat",
     "ObjectKind", "ObjectSample", "SimObjectRef", "SimulatorOperation", "SimulatorReadState", "SimulatorResult",
+    "PauseState", "SignalError", "Snapshot", "SnapshotPeriod", "StrEnum", "SubscriptionEnded", "simulator_utc",
+    "known_control_groups",
 ]

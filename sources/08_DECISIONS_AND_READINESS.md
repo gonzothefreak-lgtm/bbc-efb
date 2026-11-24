@@ -48,8 +48,8 @@ The owner confirmed full SimConnect read and write capability for the first Core
 - [x] Complete the approved offline SDK batch and account for all 91 functions. The inventory shows 67 implemented paths, including three owner-approved experimental calls, 22 deprecated entries, one unsupported entry and one header-only entry. The guarded suite passed 115 cases. [Function dictionary](10_SIMCONNECT_FUNCTION_DICTIONARY.md) · [Batch report](../reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_remaining_sdk_batch_offline_2026-11-24/REPORT.md)
 - [ ] Finalise the module-facing API and dictionaries after native verification. Record aircraft and add-on support, Client Data schemas and reconnect behaviour, and observed failure or silence for the three experimental functions. The owner approved public access to simulator flight save, flight plan load and reserved Tab combinations with a prominent warning. [Experimental calls](05_CORE_AND_SIMCONNECT.md#experimental-simulator-calls)
 - [x] Resolve all 67 adapter symbols in the approved load-only preflight. Zero SimConnect functions were called. [Expanded preflight report](../reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_sdk_dll_expanded_preflight_2026-11-24/REPORT.md)
-- [x] Run the approved live read-only default aircraft probe. The Asobo 747-8i passed using callback dispatch. Desktop pull dispatch failed on its first packet retrieval. [Default aircraft report](../reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_live_readonly_2026-11-24/DEFAULT_RETRY.md)
-- [x] Repeat the approved callback-based read-only check on the PMDG 737-800BCF. Basic telemetry and COM1 readings passed. Standard aircraft input discovery returned zero entries. [Comparison report](../reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_live_readonly_2026-11-24/PMDG_READONLY.md)
+- [x] Run the approved live read-only default aircraft probe. The Asobo 747-8i passed using callback dispatch. Desktop pull dispatch failed on its first packet retrieval. [Default aircraft report](../reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_live_readonly_2026-11-24/DEFAULT_RETRY.md) (local live evidence, not present in the repository; this tick rests on that local evidence only)
+- [x] Repeat the approved callback-based read-only check on the PMDG 737-800BCF. Basic telemetry and COM1 readings passed. Standard aircraft input discovery returned zero entries. [Comparison report](../reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_live_readonly_2026-11-24/PMDG_READONLY.md) (local live evidence, not present in the repository; this tick rests on that local evidence only)
 - [ ] With separate approval, validate the release candidate's runtime behavior in MSFS. Cover connection and teardown, reconnect and stale values, actual data units and cadence, controlled writes and readback (including both COM spacings), third-party Client Data schemas, and simulator frame-time and resource impact.
 
 ### First internal EFB build
@@ -59,6 +59,25 @@ The owner confirmed full SimConnect read and write capability for the first Core
 - [ ] Complete and verify the local manual Logbook. Select a data folder, save and reopen a flight, find it in History, edit it, and check the stored record, correction history and recalculated summaries.
 - [ ] Confirm automatic Recorder rules with the owner, including flight start/end, clocks, pause and Active Pause, sim rate, touchdown, disconnect gaps and recovery. Verify a normal flight and interruption/reopen cases before accepting automatic Flight Logging. Live validation requires separate approval. [Logbook and Recorder scope](04_LOGBOOK_AND_RECORDER.md)
 - [ ] Package and verify the first Windows build under the applicable approvals. Check launch, resize, close, offline status wording and data persistence. Verify that deployed application code and files are free of temporary demo code, simulated providers, test fixtures, development logs and probe outputs. Preserve development and test evidence separately. Stop for owner review after that build.
+
+### Audit fixes, round 3: proposals awaiting owner review
+
+These notes come from the offline audit fixes (no live MSFS run, no Windows run, no GitHub CI run). Each item is a proposal or an open owner decision. None is approved by being listed here.
+
+- [ ] Proposal: accept `0.1.0a1` (PEP 440) as the version of internal concept A build 1, replacing the label `0.1.0-concept-a.1`. `VERSION` in `bbc_efb/__init__.py` is the only version source; `pyproject.toml` and `packaging/version_info.txt` follow it.
+- [ ] Proposal: let `pyproject.toml` find every `bbc_*` package automatically, with namespace packages off, so an installed EFB always includes the Flight Recorder (`bbc_recorder`), `bbc_core.ipc`, `bbc_efb.logbook_views` and `bbc_efb.modules`. Verified offline only, with one wheel built on macOS.
+- [ ] Proposal: run the CI workflow on Windows and Ubuntu with Python 3.10, 3.11 and 3.12, building and installing a real wheel on every job. It runs only after a publish, which needs the owner's approval; its first green run is still to come.
+- [ ] Owner decision: run the guarded suite, `publish.ps1` and `packaging/build_portable.ps1` on Windows for the first time. All three have only been checked statically or on macOS.
+- [ ] Owner decision: untrack `bbc-efb-source-53d2091.zip` (it is tracked although `.gitignore` excludes `*.zip`).
+- [ ] Owner decision: whether to rewrite history to remove the personal author email on commit `0c5fb13`, and whether to turn on GitHub's email-privacy settings.
+- [ ] Owner decision: whether to commit redacted live read-only reports and the live probe script, which are not present in the repository today.
+- [ ] Owner decision: the packaging proposals listed in `packaging/README.md` (freezer, dependency pins, two ZIPs, simulated provider, licence texts, code signing).
+- [ ] Proposal: the Recorder service rules P-S1 to P-S9 (sampling cadence, track, quiet feed, 30-minute long gap, manual mode, Stop Logging confirmation, Save & Exit as interrupted, airport attribution, empty flights), listed in `PROPOSALS` in `bbc_recorder/service.py`.
+- [ ] Proposal: after `SimStop`, no flight is armed automatically until `SimStart` (`bbc_recorder/RULES.md`).
+- [ ] Owner decision: start-up recovery saves every recoverable unfinished journal to the Logbook as interrupted without asking (contract C3), while P-R1 proposed asking the pilot first. Resuming a flight is not offered.
+- [ ] Owner decision: journal retention. `flight_logging.journal_retention_days` is saved but nothing deletes journals yet, and one small discarded journal per simulator session accumulates.
+- [ ] Proposal: Client Data area names keep their declared case by default (A76); `preserve_case=False` keeps the old upper-casing. SimConnect's case rule has not been checked natively.
+- [ ] Owner decision: whether the offline guard (`tests/test_repo_offline_guard.py`) may allow local socket files (AF_UNIX only) so the experimental IPC transport tests run under it. Until then they skip under the guard and run under the plain test command.
 
 ### Second release after owner review
 

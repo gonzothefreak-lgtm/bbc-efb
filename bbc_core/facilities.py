@@ -1,43 +1,44 @@
 """Read-only simulator facility requests and typed airport data."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
 from math import isfinite
 from re import fullmatch
 from struct import Struct
 
-from .contract import CoreRequestError, Source
+from .contract import CoreRequestError, Source, StrEnum
 
 
-class FacilityState(str, Enum):
+class FacilityState(StrEnum):
     PENDING = "pending"
     READY = "ready"
     NO_DATA = "no_data"
     UNAVAILABLE = "unavailable"
 
 
-class NavaidKind(str, Enum):
+class NavaidKind(StrEnum):
     VOR = "vor"
     NDB = "ndb"
     WAYPOINT = "waypoint"
 
 
-class FacilityKind(str, Enum):
+class FacilityKind(StrEnum):
     AIRPORT = "airport"
     VOR = "vor"
     NDB = "ndb"
     WAYPOINT = "waypoint"
 
 
-class FacilityChange(str, Enum):
+class FacilityChange(StrEnum):
     SNAPSHOT = "snapshot"
     ADDED = "added"
     REMOVED = "removed"
     UNAVAILABLE = "unavailable"
 
 
-class AirportFilterField(str, Enum):
+class AirportFilterField(StrEnum):
     AIRPORT_NAME = "AIRPORT:NAME64"
     RUNWAY_PRIMARY_NUMBER = "AIRPORT:RUNWAY:PRIMARY_NUMBER"
     RUNWAY_SECONDARY_NUMBER = "AIRPORT:RUNWAY:SECONDARY_NUMBER"

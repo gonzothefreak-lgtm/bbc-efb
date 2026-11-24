@@ -1,8 +1,13 @@
 """First ABI declarations from the installed MSFS 2020 SDK 0.24.6.0 header.
 
-This module describes packet layouts and signatures for the future adapter.
-It performs no DLL loading or calls. Layouts still need offline verification.
+This module describes packet layouts and signatures for the adapter. It
+performs no DLL loading or calls. Packed structures declare the MSVC layout
+explicitly (``_layout_ = "ms"``) because SimConnect.h uses ``#pragma pack(1)``
+with MSVC rules; Python 3.14+ requires the explicit choice on non-Windows hosts.
+Sizes and offsets are checked offline in tests/test_simconnect_abi_offline.py.
 """
+
+from __future__ import annotations
 
 import ctypes
 from ctypes import (
@@ -86,7 +91,20 @@ class ClientDataPeriod(IntEnum):
     SECOND = 4
 
 
+# SIMCONNECT_DATA_REQUEST_FLAG_* and SIMCONNECT_CLIENT_DATA_REQUEST_FLAG_*.
+DATA_REQUEST_FLAG_CHANGED = 0x1
+DATA_REQUEST_FLAG_TAGGED = 0x2
+# SIMCONNECT_EXCEPTION values used for specific recovery decisions.
+EXCEPTION_NAME_UNRECOGNIZED = 7
+EXCEPTION_ALREADY_CREATED = 32
+# SimConnect_GetNextDispatch returns E_FAIL when no message is waiting.
+E_FAIL = -2147467259  # 0x80004005 as a signed HRESULT
+SIMCONNECT_UNUSED = 0xFFFFFFFF
+UNKNOWN_GROUP = 0xFFFFFFFF
+
+
 class Receive(Structure):
+    _layout_ = "ms"
     _pack_ = 1
     _fields_ = [
         ("size", DWORD),
@@ -170,6 +188,7 @@ class ReceiveActionCallback(Receive):
 
 
 class NativeInitialPosition(Structure):
+    _layout_ = "ms"
     _pack_ = 1
     _fields_ = [(name, c_double) for name in ("latitude", "longitude", "altitude", "pitch", "bank", "heading")]
     _fields_ += [("on_ground", DWORD), ("airspeed", DWORD)]
@@ -235,6 +254,7 @@ class FacilityListType(IntEnum):
 
 
 class InputEventDescriptor(Structure):
+    _layout_ = "ms"
     _pack_ = 1
     _fields_ = [("name", c_char * 64), ("hash", UINT64), ("type", DWORD)]
 
@@ -251,8 +271,8 @@ class ReceiveInputParameters(Receive):
     _fields_ = [("hash", UINT64), ("value", c_char * 260)]
 
 
-# All functions below return an HRESULT. The future loader will bind these
-# argument lists explicitly before exposing the DLL to the adapter.
+# All functions below return an HRESULT. The loader binds these argument lists
+# explicitly before exposing the DLL to the adapter.
 DispatchProc = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)(None, POINTER(Receive), DWORD, c_void_p)
 
 
@@ -331,3 +351,14 @@ SIGNATURES = {
     "SimConnect_RequestClientData": (HANDLE,) + (DWORD,) * 8,
     "SimConnect_SetClientData": (HANDLE,) + (DWORD,) * 5 + (c_void_p,),
 }
+
+
+# Exports without which the adapter cannot hold a telemetry session. Every other
+# export is optional: the loader records it as missing and the provider reports
+# the dependent capability as unsupported instead of refusing to load.
+REQUIRED_EXPORTS = frozenset({
+    "SimConnect_Open", "SimConnect_Close", "SimConnect_GetNextDispatch", "SimConnect_CallDispatch",
+    "SimConnect_GetLastSentPacketID", "SimConnect_AddToDataDefinition", "SimConnect_ClearDataDefinition",
+    "SimConnect_RequestDataOnSimObject", "SimConnect_SubscribeToSystemEvent",
+    "SimConnect_UnsubscribeFromSystemEvent", "SimConnect_SetSystemEventState", "SimConnect_RequestSystemState",
+})

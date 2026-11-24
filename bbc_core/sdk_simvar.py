@@ -1,13 +1,14 @@
 """Typed, consumer-supplied MSFS SimVar addresses."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from enum import Enum
 from re import fullmatch
 
-from .contract import CoreRequestError, ValueType
+from .contract import CoreRequestError, StrEnum, ValueType
 
 
-class SimVarFormat(str, Enum):
+class SimVarFormat(StrEnum):
     INT32 = "int32"
     INT64 = "int64"
     FLOAT32 = "float32"
@@ -37,6 +38,18 @@ _VALID_FORMATS = {
 }
 
 
+# SDK families whose index counts from zero (for example GEAR IS ON GROUND:0 is the centre or
+# nose gear and CONTACT POINT IS ON GROUND:0 the first contact point). Other indexed SimVars,
+# such as engines, radios and lights, count from one, so index 0 stays a request error there.
+_ZERO_BASED_PREFIXES = ("GEAR ", "WHEEL ", "CONTACT POINT ", "AUTO BRAKE ", "LEFT WHEEL ", "RIGHT WHEEL ",
+                        "CENTER WHEEL ", "AUX WHEEL ")
+
+
+def zero_based_index(name: str) -> bool:
+    """True when the SDK documents index 0 for this SimVar family."""
+    return name.upper().startswith(_ZERO_BASED_PREFIXES)
+
+
 @dataclass(frozen=True, slots=True)
 class SimVar:
     name: str
@@ -51,8 +64,12 @@ class SimVar:
         name = self.name.strip().upper()
         if not fullmatch(r"(?:L:)?[A-Z0-9_][A-Z0-9 _.\-]*", name) or len(name) > 256 or not self.name.isascii():
             raise CoreRequestError("Supply a documented SimVar name and pass its index separately.")
-        if self.index is not None and (type(self.index) is not int or not 1 <= self.index <= 0xFFFFFFFF):
-            raise CoreRequestError("SimVar indices start at one.")
+        if self.index is not None:
+            lowest = 0 if zero_based_index(name) else 1
+            if type(self.index) is not int or not lowest <= self.index <= 0xFFFFFFFF:
+                raise CoreRequestError(
+                    "SimVar indices start at zero for gear, wheel and contact-point variables and at one otherwise."
+                )
         if not isinstance(self.value_type, ValueType) or self.value_type not in _DEFAULT_FORMAT:
             raise CoreRequestError("A SimVar must be Boolean, integer, number or text.")
         if self.format is not None and (
@@ -85,10 +102,20 @@ SIMVAR_WRITE = "sdk.simvar.write"
 CLIENT_EVENT_SEND = "sdk.client_event.send"
 
 
-def client_event_name(event):
-    if not isinstance(event, str) or not fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", event):
-        raise CoreRequestError("Use a documented SDK event name without a namespace prefix.")
-    return event.upper()
+def client_event_name(event: str) -> str:
+    """Validate an SDK event name.
+
+    Standard events are case-insensitive and are upper-cased. Custom events published by
+    add-on aircraft contain one period (for example ``A32NX.FCU_HDG_INC``) and are kept exactly
+    as given, because their owners define the spelling. ``K:`` style prefixes are rejected.
+    """
+    if not isinstance(event, str) or not fullmatch(
+        r"[A-Za-z][A-Za-z0-9_]{0,127}(?:\.[A-Za-z0-9_]{1,127})?", event,
+    ):
+        raise CoreRequestError(
+            "Use a documented SDK event name, or a custom event such as VENDOR.EVENT, without a K: prefix."
+        )
+    return event if "." in event else event.upper()
 
 
 def client_event_words(event, arguments):

@@ -1,0 +1,35 @@
+# UTF-8
+#
+# Windows version resource for BBC-EFB.exe, read by PyInstaller (EXE version=).
+# Keep filevers/prodvers and the FileVersion/ProductVersion strings in step with
+# bbc_efb.VERSION: packaging/bbc-efb.spec refuses to build when they differ.
+# The four numbers are MAJOR, MINOR, PATCH and the trailing pre-release number,
+# so "0.1.0a1" (PEP 440, internal concept A build 1) is (0, 1, 0, 1).
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(0, 1, 0, 1),
+    prodvers=(0, 1, 0, 1),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+    ),
+  kids=[
+    StringFileInfo(
+      [
+      StringTable(
+        '040904B0',
+        [StringStruct('CompanyName', 'BBC EFB project'),
+        StringStruct('FileDescription', 'BBC Integrated EFB for Microsoft Flight Simulator 2020 (internal concept build)'),
+        StringStruct('FileVersion', '0.1.0a1'),
+        StringStruct('InternalName', 'BBC-EFB'),
+        StringStruct('LegalCopyright', 'Copyright holder and licence to be confirmed by the project owner'),
+        StringStruct('OriginalFilename', 'BBC-EFB.exe'),
+        StringStruct('ProductName', 'BBC EFB'),
+        StringStruct('ProductVersion', '0.1.0a1')])
+      ]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)

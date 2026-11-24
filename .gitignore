@@ -18,6 +18,7 @@ secrets.json
 id_rsa
 id_ed25519
 /build/
+*.egg-info/
 /dist/
 *.dll
 *.exe

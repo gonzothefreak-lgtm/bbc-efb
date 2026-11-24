@@ -1,0 +1,28 @@
+# Pinned dependencies for the portable Windows build (packaging/build_portable.ps1).
+#
+# build_portable.ps1 installs exactly this list into a fresh virtual environment
+# with "pip install --no-deps --only-binary=:all:", then runs "pip check", so
+# nothing outside this file is installed and no source distribution is built.
+#
+# PROPOSAL for the owner: PyInstaller is the proposed freezer and has not been
+# formally selected. Its bootloader is GPL-2.0 with an exception that allows
+# distributing frozen applications under any licence. See THIRD_PARTY_NOTICES.md.
+#
+# Hash pinning: add "--hash=sha256:..." to every line (for example with
+# "pip download" on the build machine and "pip hash", or pip-tools
+# "pip-compile --generate-hashes"). pip then refuses any file whose hash differs.
+
+# EFB user interface. 6.8.3 is the tested release (pyproject.toml "ui" extra).
+PySide6==6.8.3
+PySide6-Essentials==6.8.3
+PySide6-Addons==6.8.3
+shiboken6==6.8.3
+
+# Freezer and its dependencies on Windows.
+pyinstaller==6.11.1
+pyinstaller-hooks-contrib==2024.10
+altgraph==0.17.4
+pefile==2023.2.7
+pywin32-ctypes==0.2.3
+packaging==24.2
+setuptools==75.6.0

@@ -1,5 +1,6 @@
 """Exercise the direct adapter with in-memory packets and an injected SDK."""
 
+from collections import deque
 from ctypes import cast, POINTER, sizeof, string_at
 from pathlib import Path
 from struct import pack, unpack
@@ -14,6 +15,7 @@ from bbc_core.simconnect_abi import (
     ReceiveSimObjectDataPrefix,
 )
 from bbc_core.simconnect_sdk import SimConnectSdk
+from test_adapter_support import FakeClock
 
 
 def packet(cls, kind, payload=b"", **fields):
@@ -31,13 +33,15 @@ class FakeSdk:
 
     def __init__(self):
         self.start = [packet(ReceiveOpen, ReceiveId.OPEN)]
-        self.incoming = []
+        self.incoming = deque()
         self.calls = []
         self.closed = []
         self.handle = None
         self.definitions = {}
         self.mapped = {}
         self.radio = [118_100_000, 121_500_000]
+        # COM SPACING MODE:1 reply: 0 (25 kHz), 1 (8.33 kHz), or None to refuse the SimVar.
+        self.spacing = 1
         self.throttle = 0.0
         self.apply_write = True
         self.reject_write = False
@@ -64,8 +68,9 @@ class FakeSdk:
         self.mapped.clear()
 
     def next_packet(self, handle):
+        # Like the real SDK, an empty queue yields no packet (finding A27).
         self._handle_is_current(handle)
-        return self.incoming.pop(0) if self.incoming else packet(Receive, 0)
+        return self.incoming.popleft() if self.incoming else None
 
     def last_packet_id(self, handle):
         self._handle_is_current(handle)
@@ -77,18 +82,24 @@ class FakeSdk:
         self.calls.append((name, args, self.packet_id))
         if name == "SimConnect_AddToDataDefinition":
             self.definitions.setdefault(args[0], []).append(args[1:4])
+            if args[1] == b"COM SPACING MODE:1" and self.spacing is None:
+                self.exception(self.packet_id)
         elif name == "SimConnect_ClearDataDefinition":
             self.definitions.pop(args[0])
         elif name == "SimConnect_RequestDataOnSimObject":
             request, definition, _, period, *_ = args
             if period == Period.ONCE and self.supply_radio_reads:
                 fields = self.definitions[definition]
-                if len(fields) == 1:
+                if fields[0][0] == b"COM SPACING MODE:1":
+                    if self.spacing is not None:
+                        self.data(request, pack("<i", self.spacing), definition=definition)
+                elif len(fields) == 1:
                     self.data(request, pack("<d", self.throttle), definition=definition)
                 elif self.fail_readback and self.matching_calls("SimConnect_TransmitClientEvent"):
                     self.exception(self.packet_id)
                 else:
-                    self.data(request, pack("<ii", *self.radio), definition=definition, count=2)
+                    # COM frequencies are FLOAT64 Hz on the wire (contract C6).
+                    self.data(request, pack("<dd", *map(float, self.radio)), definition=definition, count=2)
         elif name == "SimConnect_MapClientEventToSimEvent":
             self.mapped[args[0]] = args[1]
         elif name == "SimConnect_TransmitClientEvent":
@@ -133,23 +144,13 @@ class FakeSdk:
             raise AssertionError("Fake SDK received the wrong handle")
 
 
-class SimConnectProviderOfflineTests(TestCase):
+class SimConnectProviderOfflineTests(FakeClock, TestCase):
     def setUp(self):
-        self.now = 100.0
-        for target in ("bbc_core.core.monotonic", "bbc_core.simconnect.monotonic"):
-            clock = patch(target, side_effect=lambda: self.now)
-            clock.start()
-            self.addCleanup(clock.stop)
-        sleeper = patch("bbc_core.simconnect.sleep", side_effect=self.advance)
-        sleeper.start()
-        self.addCleanup(sleeper.stop)
+        self.start_clock(100.0)  # Shared clock for every bbc_core module, sleep included (A139).
         self.sdk = FakeSdk()
         self.provider = SimConnectProvider(self.sdk)
         self.core = Core(self.provider)
         self.addCleanup(self.core.disconnect)
-
-    def advance(self, seconds):
-        self.now += seconds
 
     def test_open_requires_confirmation_and_close_retires_handle(self):
         self.sdk.start = [packet(Receive, 0), packet(ReceiveOpen, ReceiveId.OPEN)]
@@ -253,17 +254,22 @@ class SimConnectProviderOfflineTests(TestCase):
         self.assertEqual(consumer.latest(good.id).value, 35.0)
         self.assertEqual(consumer.connection().state, ConnectionState.CONNECTED)
 
-    def test_truncated_known_packet_ends_session_cleanly(self):
+    def test_truncated_known_packet_is_local_to_its_signal(self):
+        # Finding A45: one malformed reply makes its own signal unavailable and
+        # the shared session continues.
         consumer = self.core.register_consumer()
-        consumer.subscribe("aircraft.ground_speed")
+        speed = consumer.subscribe("aircraft.ground_speed")
         self.core.connect()
         self.core.pump()
         ((args, _),) = self.sdk.matching_calls("SimConnect_RequestDataOnSimObject")
         self.sdk.data(args[0], b"\0")
         self.core.pump()
-        self.assertEqual(consumer.connection().state, ConnectionState.ERROR)
-        self.assertIn("Invalid SimConnect data", consumer.connection().detail)
-        self.assertIsNone(self.sdk.handle)
+        self.assertEqual(consumer.connection().state, ConnectionState.CONNECTED)
+        self.assertEqual(consumer.latest(speed.id).quality, Quality.UNAVAILABLE)
+        self.assertIn("Invalid SimConnect data", consumer.latest(speed.id).reason)
+        self.sdk.data(args[0], pack("<d", 12.5))
+        self.core.pump()
+        self.assertEqual(consumer.latest(speed.id).value, 12.5)
 
     def test_tune_and_swap_use_one_shot_readback_without_a_telemetry_subscription(self):
         radio = self.core.register_consumer(control_groups=("radios",))
@@ -287,8 +293,13 @@ class SimConnectProviderOfflineTests(TestCase):
         self.assertEqual([args[2] for args, _ in transmits], [123_450_000, 0])
         self.assertTrue(all(args[0] == 0 and args[-1] == 0x10 for args, _ in transmits))
         reads = self.sdk.matching_calls("SimConnect_RequestDataOnSimObject")
-        self.assertEqual(len(reads), 4)
+        # Per command: the COM1 pair and COM SPACING MODE:1 baseline, then one readback.
+        self.assertEqual(len(reads), 6)
         self.assertTrue(all(args[3] == Period.ONCE for args, _ in reads))
+        fields = {args[1]: args[3] for args, _ in self.sdk.matching_calls("SimConnect_AddToDataDefinition")}
+        self.assertEqual(fields[b"COM ACTIVE FREQUENCY:1"], DataType.FLOAT64)  # Contract C6.
+        self.assertEqual(fields[b"COM STANDBY FREQUENCY:1"], DataType.FLOAT64)
+        self.assertEqual(fields[b"COM SPACING MODE:1"], DataType.INT32)
 
     def test_missing_swap_baseline_and_invalid_frequency_prevent_transmission(self):
         radio = self.core.register_consumer(control_groups=("radios",))

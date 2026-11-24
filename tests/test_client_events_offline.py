@@ -3,14 +3,17 @@
 from struct import pack
 from unittest import TestCase
 
-from bbc_core import ClientEventData, CommandState, ConnectionState, Core, CoreRequestError, Event, Gap
+from bbc_core import ClientEventData, CommandState, ConnectionState, Core, CoreRequestError, Event
+from bbc_core.contract import SignalError  # C7: provider errors are not Gaps
 from bbc_core.simconnect import SimConnectProvider
 from bbc_core.simconnect_abi import ReceiveEvent, ReceiveEventHeader, ReceiveId
+from test_adapter_support import FakeClock
 from test_simconnect_provider_offline import FakeSdk, packet
 
 
-class ClientEventsOfflineTests(TestCase):
+class ClientEventsOfflineTests(FakeClock, TestCase):
     def setUp(self):
+        self.start_clock()  # Shared clock for every bbc_core module, sleep included (A139).
         self.sdk = FakeSdk()
         self.core = Core(SimConnectProvider(self.sdk))
         self.addCleanup(self.core.disconnect)
@@ -113,11 +116,11 @@ class ClientEventsOfflineTests(TestCase):
                                         event_id=event, group_id=group))
         self.emit(group, event, 5)
         self.core.pump()
-        failed = [item.reason for item in self.first.poll() if isinstance(item, Gap)]
+        failed = [item.reason for item in self.first.poll() if isinstance(item, SignalError)]
         self.assertEqual(len(failed), 1)
         self.assertIn("SimConnect exception", failed[0])
         updates = peer.poll()
-        self.assertTrue(any(isinstance(item, Gap) and "packet size" in item.reason for item in updates))
+        self.assertTrue(any(isinstance(item, SignalError) and "packet size" in item.reason for item in updates))
         self.assertEqual([item.value for item in updates if isinstance(item, Event)], [ClientEventData((5,))])
         self.assertIs(self.first.connection().state, ConnectionState.CONNECTED)
 
@@ -134,7 +137,7 @@ class ClientEventsOfflineTests(TestCase):
         self.emit(group, good, 2)
         self.core.pump()
         updates = self.first.poll()
-        self.assertTrue(any(isinstance(item, Gap) for item in updates))
+        self.assertTrue(any(isinstance(item, SignalError) for item in updates))
         self.assertEqual([item.value for item in updates if isinstance(item, Event)], [ClientEventData((2,))])
 
     def test_reconnect_remaps_active_names_and_rejects_invalid_inputs(self):
@@ -169,13 +172,43 @@ class ClientEventsOfflineTests(TestCase):
         self.assertEqual(self.events(consumer)[0].value.words, (90, 1, 0, 0, 0))
         self.assertIs(consumer.command_result(command.id).state, CommandState.SENT)
 
-    def test_cleanup_rejection_closes_session_so_unwanted_events_cannot_continue(self):
+    def test_mixed_case_custom_event_maps_one_spelling_for_subscribe_and_transmit(self):
+        consumer = self.core.register_consumer(control_groups=("client_events",))
+        subscription = consumer.subscribe_client_event("Vendor.MyEvent")
+        self.assertEqual(subscription.capability.id, "sdk.client_event:Vendor.MyEvent")
+        self.core.pump()
+        group, event = self.ids("Vendor.MyEvent")
+        self.sdk.apply_write = False  # The fake simulates only the COM radio events.
+        command = consumer.submit_client_event("Vendor.MyEvent", (7,))
+        self.core.pump()
+        names = [args[1] for args, _ in self.sdk.matching_calls("SimConnect_MapClientEventToSimEvent")]
+        self.assertEqual(names, [b"Vendor.MyEvent"])
+        transmit = self.sdk.matching_calls("SimConnect_TransmitClientEvent_EX1") or self.sdk.matching_calls(
+            "SimConnect_TransmitClientEvent")
+        self.assertEqual(transmit[0][0][1], event)
+        self.emit(group, event, 7)
+        self.core.pump()
+        self.assertEqual(len(self.events(consumer)), 1)
+        self.assertIs(consumer.command_result(command.id).state, CommandState.SENT)
+
+    def test_cleanup_rejection_keeps_session_and_drops_events_from_the_retired_group(self):
+        # A refused cleanup is local: the session stays up, the old group is retired
+        # so stray events are dropped, and later subscriptions use a fresh group.
         subscription = self.first.subscribe_client_event("LANDING_LIGHTS_SET")
         self.core.pump()
+        group, event = self.ids("LANDING_LIGHTS_SET")
         self.first.unsubscribe(subscription.id)
         self.core.pump()
         (_, sent), = self.group_calls("SimConnect_ClearNotificationGroup")
         self.sdk.exception(sent)
         self.core.pump()
-        self.assertIs(self.first.connection().state, ConnectionState.ERROR)
-        self.assertIsNone(self.sdk.handle)
+        self.assertIs(self.first.connection().state, ConnectionState.CONNECTED)
+        self.first.subscribe_client_event("LANDING_LIGHTS_SET")
+        self.core.pump()
+        self.core.pump()
+        new_group = self.group_calls("SimConnect_AddClientEventToNotificationGroup")[-1][0][0]
+        self.assertNotEqual(new_group, group)
+        self.emit(group, event, 1)
+        self.emit(new_group, event, 2)
+        self.core.pump()
+        self.assertEqual([item.value for item in self.events(self.first)], [ClientEventData((2,))])

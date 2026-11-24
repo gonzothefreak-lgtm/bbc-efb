@@ -3,15 +3,21 @@
 from ctypes import string_at
 from struct import unpack_from
 from unittest import TestCase
-from unittest.mock import patch
 
-from bbc_core import ClientDataArea, CommandState, ConnectionState, Core, CoreRequestError, Quality
+from bbc_core import ClientDataArea, CommandState, ConnectionState, Core, CoreRequestError, Gap, Quality
 from bbc_core.simconnect import SimConnectProvider
 from bbc_core.simconnect_abi import ClientDataPeriod, ReceiveId, ReceiveSimObjectDataPrefix
+from test_adapter_support import FakeClock
 from test_simconnect_provider_offline import FakeSdk, packet
 
 
 class ClientDataSdk(FakeSdk):
+    """Client Data areas keyed by their exact published bytes.
+
+    SimConnect's case rule for Client Data names is not verified natively, so this fake is
+    strict: a name maps only to an area published with exactly the same bytes (A76).
+    """
+
     def __init__(self):
         super().__init__()
         self.areas = {b"EXTERNAL": bytearray(b"ab1234cd")}
@@ -78,18 +84,14 @@ class ClientDataSdk(FakeSdk):
         ))
 
 
-class ClientDataOfflineTests(TestCase):
+class ClientDataOfflineTests(FakeClock, TestCase):
     def setUp(self):
-        self.now = 100.0
-        for module in ("core", "simconnect", "simconnect_client_data"):
-            clock = patch(f"bbc_core.{module}.monotonic", side_effect=lambda: self.now)
-            clock.start()
-            self.addCleanup(clock.stop)
+        self.start_clock(100.0)  # Every bbc_core clock and simconnect.sleep (A139).
         self.sdk = ClientDataSdk()
         self.core = Core(SimConnectProvider(self.sdk))
         self.addCleanup(self.core.disconnect)
         self.module = self.core.register_consumer(control_groups=("client_data",))
-        self.area = ClientDataArea("external", 8, writable=True)
+        self.area = ClientDataArea("EXTERNAL", 8, writable=True)
         self.region = self.area.region(2, 4)
         self.core.register_client_data(self.area)
 
@@ -138,7 +140,7 @@ class ClientDataOfflineTests(TestCase):
         self.assertEqual(create[1:], (8, 1))
         self.assertEqual(self.module.latest(first.id).value, bytes(4))
         self.core.disconnect()
-        self.assertIn(b"OWNED", self.sdk.areas)
+        self.assertIn(b"owned", self.sdk.areas)
 
     def test_permissions_and_bounds_prevent_writes(self):
         with self.assertRaises(ValueError):
@@ -223,6 +225,40 @@ class ClientDataOfflineTests(TestCase):
         self.core.pump()
         self.assertEqual(self.module.latest(sub.id).value, b"1234")
 
+    def test_names_are_mapped_with_the_exact_declared_bytes_by_default(self):
+        """A76: the adapter passes the declared spelling unchanged to MapClientDataNameToID."""
+        self.sdk.areas[b"PMDG_NG3_Data"] = bytearray(b"pmdg-ng3")
+        exact = ClientDataArea("PMDG_NG3_Data", 8)
+        self.assertEqual(exact.name, "PMDG_NG3_Data")
+        self.core.register_client_data(exact)
+        subscription = self.module.subscribe_client_data(exact.region(0, 4))
+        self.core.connect()
+        self.core.pump()
+        names = [args[0] for args, _ in self.sdk.matching_calls("SimConnect_MapClientDataNameToID")]
+        self.assertEqual(names, [b"PMDG_NG3_Data"])
+        self.assertEqual(self.module.latest(subscription.id).value, b"pmdg")
+
+    def test_a_wrongly_cased_name_is_not_silently_matched(self):
+        self.sdk.areas[b"PMDG_NG3_Data"] = bytearray(b"pmdg-ng3")
+        wrong = ClientDataArea("pmdg_ng3_data", 8)
+        self.core.register_client_data(wrong)
+        subscription = self.module.subscribe_client_data(wrong.region(0, 4))
+        self.core.connect()
+        self.core.pump()
+        self.assertEqual([args[0] for args, _ in self.sdk.matching_calls("SimConnect_MapClientDataNameToID")],
+                         [b"pmdg_ng3_data"])
+        observation = self.module.latest(subscription.id)
+        self.assertIs(observation.quality, Quality.UNAVAILABLE)
+        self.assertIs(self.module.connection().state, ConnectionState.CONNECTED)
+
+    def test_the_legacy_upper_case_option_still_works(self):
+        legacy = ClientDataArea("external", 8, preserve_case=False)
+        self.assertEqual(legacy.name, "EXTERNAL")
+        self.assertEqual(legacy, ClientDataArea("EXTERNAL", 8))
+        # The option only shapes the name, so the same area declared either way is one area.
+        self.core.register_client_data(ClientDataArea("external", 8, writable=True, preserve_case=False))
+        self.assertEqual(self.module.client_data_areas(), (self.area,))
+
     def test_reconnect_invalidates_baseline_and_remaps_once_for_new_handle(self):
         self.module.subscribe_client_data(self.region)
         first = self.core.connect()
@@ -237,3 +273,29 @@ class ClientDataOfflineTests(TestCase):
         self.assertEqual(self.module.command_result(write.id).state, CommandState.REJECTED)
         self.assertEqual(len(self.sdk.matching_calls("SimConnect_MapClientDataNameToID")), 2)
         self.assertFalse(self.sdk.writes)
+
+    def test_ingress_gap_rereads_an_on_set_region_once(self):
+        """A37: after an IngressGap an ON_SET region is read again instead of staying
+        unavailable until the owner next writes it."""
+        subscription = self.module.subscribe_client_data(self.region)
+        self.core.connect()
+        self.core.pump()
+        self.assertEqual(self.module.latest(subscription.id).value, b"1234")
+        before = len(self.sdk.matching_calls("SimConnect_RequestClientData"))
+        # The area changed while the transport was losing packets.
+        self.sdk.areas[b"EXTERNAL"][2:6] = b"GAP!"
+        self.sdk.take_dropped = lambda: dropped.pop() if dropped else 0
+        dropped = [3]
+        self.core.pump()  # Receives the IngressGap.
+        gaps = [update for update in self.module.poll() if isinstance(update, Gap)]
+        self.assertEqual([gap.dropped_updates for gap in gaps], [3])
+        self.assertIs(self.module.latest(subscription.id).quality, Quality.UNAVAILABLE)
+        self.core.pump()  # Sends the refresh and reads its reply.
+        self.core.pump()
+        reads = self.sdk.matching_calls("SimConnect_RequestClientData")[before:]
+        self.assertEqual([args[3] for args, _ in reads], [ClientDataPeriod.ONCE])
+        observation = self.module.latest(subscription.id)
+        self.assertIs(observation.quality, Quality.CURRENT)
+        self.assertEqual(observation.value, b"GAP!")
+        # The ON_SET stream itself is kept, not re-requested.
+        self.assertEqual(len(self.sdk.streams), 1)

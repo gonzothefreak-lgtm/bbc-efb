@@ -1,8 +1,11 @@
 """Provider-independent messages and capabilities for the BBC Core API."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from datetime import datetime
-from enum import Enum
+from datetime import datetime, timedelta, timezone
+from enum import Enum, IntFlag
+from math import isfinite
 from uuid import UUID
 
 
@@ -10,13 +13,25 @@ API_VERSION = "0.1-draft"
 Scalar = bool | int | float | str | bytes
 
 
-class Kind(str, Enum):
+class StrEnum(str, Enum):
+    """A text enum whose ``str()`` and ``format()`` give the value on every supported Python.
+
+    ``enum.StrEnum`` only exists from Python 3.11, and a plain ``(str, Enum)`` prints as
+    ``Class.MEMBER`` in f-strings on 3.12. Records and logs written with ``f"{member}"``
+    therefore read back the same way whichever interpreter wrote them.
+    """
+
+    __str__ = str.__str__
+    __format__ = str.__format__
+
+
+class Kind(StrEnum):
     VALUE = "value"
     EVENT = "event"
     COMMAND = "command"
 
 
-class ValueType(str, Enum):
+class ValueType(StrEnum):
     BOOLEAN = "boolean"
     INTEGER = "integer"
     NUMBER = "number"
@@ -27,22 +42,23 @@ class ValueType(str, Enum):
     MISSION_ACTION = "mission_action"
     CLIENT_EVENT = "client_event"
     HARDWARE_INPUT = "hardware_input"
+    SNAPSHOT = "snapshot"
 
 
-class Quality(str, Enum):
+class Quality(StrEnum):
     CURRENT = "current"
     STALE = "stale"
     UNAVAILABLE = "unavailable"
 
 
-class ConnectionState(str, Enum):
+class ConnectionState(StrEnum):
     DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
     CONNECTED = "connected"
     ERROR = "error"
 
 
-class CommandState(str, Enum):
+class CommandState(StrEnum):
     ACCEPTED = "accepted"
     SENT = "sent"
     CONFIRMED = "confirmed"
@@ -52,7 +68,49 @@ class CommandState(str, Enum):
     UNVERIFIED = "unverified"
 
 
-class InputCatalogState(str, Enum):
+class SnapshotPeriod(StrEnum):
+    """How often a provider samples a snapshot: per second, per simulation frame or per visual frame."""
+    SECOND = "second"
+    SIM_FRAME = "sim_frame"
+    VISUAL_FRAME = "visual_frame"
+
+
+class PauseState(IntFlag):
+    """Decoded ``Pause_EX1`` flags. The value stays an ``int``, so existing comparisons work.
+
+    The SDK documents FULL (1, full pause), FULL_WITH_SOUND (2, legacy full pause with
+    sound), ACTIVE (4, the Active Pause button) and SIM (8, the player's simulation is paused
+    while traffic and multiplayer keep running). Unknown bits are kept, not discarded.
+    """
+
+    NONE = 0
+    FULL = 1
+    FULL_WITH_SOUND = 2
+    ACTIVE = 4
+    SIM = 8
+
+    @property
+    def full_pause(self) -> bool:
+        return bool(self & (PauseState.FULL | PauseState.FULL_WITH_SOUND))
+
+    @property
+    def active_pause(self) -> bool:
+        return bool(self & PauseState.ACTIVE)
+
+    @property
+    def sim_pause(self) -> bool:
+        return bool(self & PauseState.SIM)
+
+    @property
+    def paused(self) -> bool:
+        """True for any documented pause, including Active Pause."""
+        return bool(self & (PauseState.FULL | PauseState.FULL_WITH_SOUND | PauseState.ACTIVE | PauseState.SIM))
+
+    __str__ = int.__repr__
+    __format__ = int.__format__
+
+
+class InputCatalogState(StrEnum):
     UNAVAILABLE = "unavailable"
     LOADING = "loading"
     READY = "ready"
@@ -170,7 +228,48 @@ class Event:
 
 @dataclass(frozen=True, slots=True)
 class Gap:
+    """Updates were lost from a queue (the provider's or this consumer's): data loss.
+
+    A provider error for one subscription is a separate type, :class:`SignalError`, and is
+    never a ``Gap``. ``isinstance(update, Gap)`` therefore means data loss only.
+    """
+
     dropped_updates: int
+    reason: str
+
+    @property
+    def is_data_loss(self) -> bool:
+        return True
+
+
+@dataclass(frozen=True, slots=True)
+class SignalError:
+    """The provider reported an error for one subscription instead of a value or event.
+
+    This is not a :class:`Gap`: it means "this source failed", not "updates were lost from a
+    queue". It has the same ``dropped_updates`` and ``reason`` fields so the two can be shown
+    alike. ``dropped_updates`` is the number of events or samples the error replaced.
+    """
+
+    dropped_updates: int
+    reason: str
+    capability_id: str = ""
+    subscription_id: str = ""
+
+    @property
+    def is_data_loss(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class SubscriptionEnded:
+    """Core ended a subscription itself, for example after the aircraft inputs changed.
+
+    The subscription ID is no longer active. Subscribe again to keep receiving the data.
+    """
+
+    subscription_id: str
+    capability_id: str
     reason: str
 
 
@@ -219,7 +318,51 @@ class InputParameters:
         return self.id.session_id
 
 
-Update = Connection | Observation | Event | Gap | CommandResult | InputCatalog | InputParameters
+@dataclass(frozen=True, slots=True)
+class Snapshot:
+    """Values of several SimVars taken from one simulator delivery, with simulator clocks.
+
+    ``values`` follows the order of ``names``. A value is None when the provider could not
+    decode that field. ``simulation_time_s`` is SIMULATION TIME (seconds, advances with sim
+    rate and stops in pause), ``absolute_time_s`` is ABSOLUTE TIME (seconds since
+    0001-01-01T00:00 on the simulator's UTC clock) and ``sample_time`` is that instant as
+    an aware UTC datetime. Host receipt time is ``received_at``. For a ``changed_only``
+    subscription the four clock fields are None (the provider leaves the clock datums out).
+    """
+
+    subscription_id: str
+    names: tuple[str, ...]
+    values: tuple[Scalar | None, ...]
+    simulation_time_s: float | None
+    absolute_time_s: float | None
+    simulation_rate: float | None
+    source: Source
+    session_id: str
+    received_at: datetime
+    sample_time: datetime | None = None
+
+
+Update = (
+    Connection | Observation | Event | Gap | SignalError | CommandResult | InputCatalog | InputParameters
+    | Snapshot | SubscriptionEnded
+)
+
+_ABSOLUTE_TIME_EPOCH = datetime(1, 1, 1, tzinfo=timezone.utc)
+
+
+def simulator_utc(absolute_time_s: float | None) -> datetime | None:
+    """Convert ABSOLUTE TIME (seconds since 0001-01-01 on the simulator's UTC clock) to a datetime.
+
+    Returns None for a missing, non-finite or out-of-range value rather than guessing.
+    """
+    if type(absolute_time_s) not in (int, float):
+        return None
+    try:
+        if not isfinite(absolute_time_s) or absolute_time_s < 0:
+            return None
+        return _ABSOLUTE_TIME_EPOCH + timedelta(seconds=absolute_time_s)
+    except (OverflowError, ValueError):
+        return None
 
 
 class CoreRequestError(ValueError):
