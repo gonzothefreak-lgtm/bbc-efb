@@ -20,3 +20,8 @@
 - Prioritise flight-log integrity, simulator frame times and local pilot-owned storage. Present missing, stale and simulated data honestly.
 - Keep Core independent of the UI and Recorder. Use one shared local MSFS 2020 session for demand-driven telemetry and approved commands. Keep native and simulated evidence separate.
 - Preserve approved C0.1 Logbook scope and C0.2 deferrals. Keep unfinished integrations clearly labelled. No unattended monitoring, listeners, simulator writes or speculative integrations without approval.
+
+## GitHub publishing
+
+- Treat “Update GitHub” and “Push my latest changes to GitHub” as approval to publish reviewed project changes to the existing private `gonzothefreak-lgtm/bbc-efb` repository. Check the change set for personal information, credentials, local dependencies, raw simulator logs and build output first.
+- Use `pwsh -File .\publish.ps1 -Message "Describe the change"` from the workspace. Verify the published revision. Use Git's secure credential helper and have the owner complete any sign-in approval. Never expose credentials, force-push, rewrite history, resolve conflicting remote changes without review, or make the repository public without approval.

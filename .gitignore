@@ -1,10 +1,22 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .venv/
+venv/
 /.concept-deps-*/
-/.env
-/.env.*
+.env
+.env.*
+.netrc
+credentials.json
+secrets.json
+*.pem
+*.key
+*.pfx
+*.p12
+id_rsa
+id_ed25519
 /build/
 /dist/
 *.dll
@@ -12,5 +24,7 @@ __pycache__/
 *.log
 *.whl
 /Archive/
+/reference/01_CODEX_WORK_EVIDENCE/development reviews/
 /reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_live_readonly_*/
+/reference/01_CODEX_WORK_EVIDENCE/test_artifacts/*/unittest.txt
 *.zip
