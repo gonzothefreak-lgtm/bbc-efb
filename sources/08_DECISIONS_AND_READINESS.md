@@ -55,8 +55,13 @@ The owner confirmed full SimConnect read and write capability for the first Core
 ### First internal EFB build
 
 - [x] Confirm first-build scope. Include the full approved Logbook and genuine automatic Flight Logging. Retain the one-off parked read-only SimConnect demo as an initial connection check, then separately verify an automatically recorded flight. Get separate approval before running live checks.
-- [ ] Complete Dispatch, In-Flight, Logbook and shared Settings. Connect the shell to in-process Core and keep separate permanent SimConnect and Flight Logging statuses. First build scope excludes drop-in modules.
-- [ ] Complete and verify the local manual Logbook. Select a data folder, save and reopen a flight, find it in History, edit it, and check the stored record, correction history and recalculated summaries.
+- [x] Implement and verify the offline shell with Dispatch on launch, In-Flight examples, Logbook and Settings navigation, reflow and independent permanent statuses. [Offline shell verification](07_STATUS_AND_EVIDENCE.md#offline-efb-shell)
+- [x] Connect the footer and Connection Diagnostics to the in-process Core consumer API and verify state changes offline. Flight Logging remains independently Inactive. [Core connection status verification](07_STATUS_AND_EVIDENCE.md#offline-efbcore-connection-status)
+- [x] Wire the callback-based SimConnect adapter into a single in-process Core session host. Verify connect, error, retry, dispatch and shutdown offline. [Session wiring verification](07_STATUS_AND_EVIDENCE.md#efb-session-host)
+- [x] Verify the EFB's shared session, connection status and teardown in a parked, read-only MSFS 2020 check. [Live EFB evidence](07_STATUS_AND_EVIDENCE.md#parked-efb-read-only-check)
+- [ ] Verify automatic simulator identification in the footer and wire the Recorder's states and controls. First build scope excludes drop-in modules.
+- [x] Implement the manual yearly JSON store and verify save, reopen, edit, correction history and interrupted year moves offline. [Storage verification](07_STATUS_AND_EVIDENCE.md#manual-logbook-storage)
+- [x] Verify the local manual Logbook in the offline shell. Select a data folder, save and reopen a flight, find it in History, edit it, and check the displayed correction history and recalculated summaries. [Offline shell verification](07_STATUS_AND_EVIDENCE.md#offline-efb-shell)
 - [ ] Confirm automatic Recorder rules with the owner, including flight start/end, clocks, pause and Active Pause, sim rate, touchdown, disconnect gaps and recovery. Verify a normal flight and interruption/reopen cases before accepting automatic Flight Logging. Live validation requires separate approval. [Logbook and Recorder scope](04_LOGBOOK_AND_RECORDER.md)
 - [ ] Package and verify the first Windows build under the applicable approvals. Check launch, resize, close, offline status wording and data persistence. Verify that deployed application code and files are free of temporary demo code, simulated providers, test fixtures, development logs and probe outputs. Preserve development and test evidence separately. Stop for owner review after that build.
 

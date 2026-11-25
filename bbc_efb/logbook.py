@@ -1,10 +1,11 @@
 """Manual flight entry, History, record details and record-based summaries."""
 
 from collections import Counter
+from datetime import datetime, timezone
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
-    QButtonGroup, QDateEdit, QFormLayout, QHBoxLayout, QLineEdit, QMessageBox,
+    QBoxLayout, QButtonGroup, QDateEdit, QFormLayout, QGridLayout, QHBoxLayout, QLineEdit, QMessageBox,
     QPlainTextEdit, QProgressBar, QSpinBox, QStackedWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
@@ -84,28 +85,32 @@ class Logbook(QWidget):
     def __init__(self):
         super().__init__()
         self.store = None
+        self.load_error = ""
+        self.use_local_time = False
         self.flights = []
         self.selected = None
         self.editing = None
         self.visible_flights = []
         self.active_section = "Dashboard"
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        sidebar, sidebar_layout = card("Logbook")
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(174)
-        layout.addWidget(sidebar)
+        self.section_layout = QHBoxLayout(self)
+        self.section_layout.setContentsMargins(12, 12, 12, 12)
+        self.sidebar, sidebar_layout = card("Logbook")
+        self.sidebar.setObjectName("sidebar")
+        self.section_layout.addWidget(self.sidebar)
+        self.sidebar_links = QGridLayout()
+        sidebar_layout.addLayout(self.sidebar_links)
         self.nav_group = QButtonGroup(self)
         self.nav = {}
         for name in ("Dashboard", "Flight History", "Black Box Recorder", "Statistics"):
             control = button(name, lambda checked=False, section=name: self.navigate(section))
             control.setCheckable(True)
             self.nav_group.addButton(control)
-            sidebar_layout.addWidget(control)
             self.nav[name] = control
         sidebar_layout.addStretch()
+        self._narrow_sidebar = None
+        self._layout_sidebar(self.width())
         self.stack = QStackedWidget()
-        layout.addWidget(self.stack, 1)
+        self.section_layout.addWidget(self.stack, 1)
         self.pages = {}
         self.dashboard = self.create_summary("Dashboard", recent=True)
         self.history = self.create_history()
@@ -126,6 +131,24 @@ class Logbook(QWidget):
         frame = scroll(widget)
         self.pages[name] = frame
         self.stack.addWidget(frame)
+
+    def _layout_sidebar(self, width):
+        narrow = width < 650
+        if narrow == self._narrow_sidebar:
+            return
+        self._narrow_sidebar = narrow
+        self.section_layout.setDirection(QBoxLayout.Direction.TopToBottom if narrow else
+                                         QBoxLayout.Direction.LeftToRight)
+        self.sidebar.setMinimumWidth(0 if narrow else 174)
+        self.sidebar.setMaximumWidth(16777215 if narrow else 174)
+        for index, control in enumerate(self.nav.values()):
+            self.sidebar_links.removeWidget(control)
+            row, column = divmod(index, 2) if narrow else (index, 0)
+            self.sidebar_links.addWidget(control, row, column)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._layout_sidebar(event.size().width())
 
     def navigate(self, name):
         if not self.can_leave_editor():
@@ -150,7 +173,7 @@ class Logbook(QWidget):
         layout.addWidget(warning)
         metrics = QHBoxLayout()
         metrics_widgets = []
-        for caption in ("Recorded flights", "Time entered", "Aircraft types"):
+        for caption in ("Total flights", "Time entered", "Aircraft types"):
             metric, metric_layout = card(caption)
             value = label("0", "metric")
             metric_layout.addWidget(value)
@@ -193,6 +216,8 @@ class Logbook(QWidget):
         search_row.addWidget(open_button)
         layout.addLayout(search_row)
         history_table = table(self.HEADERS)
+        history_table.setObjectName("flightHistory")
+        history_table.verticalHeader().setDefaultSectionSize(28)
         history_table.setMinimumHeight(325)
         history_table.itemSelectionChanged.connect(
             lambda: open_button.setEnabled(history_table.currentRow() >= 0 and bool(history_table.selectedItems()))
@@ -205,17 +230,29 @@ class Logbook(QWidget):
         return search, history_table, state, add
 
     def refresh(self, store):
+        if self.store is not None and store is not None and self.store.root != store.root:
+            self.selected = None
+            self.editing = None
+            self.navigate("Dashboard")
         self.store = store
-        self.flights, unreadable = store.listing() if store else ([], [])
+        self.load_error = ""
+        try:
+            self.flights, unreadable = store.listing() if store else ([], [])
+        except (OSError, ValueError, TypeError, KeyError, AttributeError) as error:
+            self.flights, unreadable = [], []
+            self.load_error = f"Logbook could not be opened: {error}"
+        warning_text = self.load_error
+        if unreadable:
+            warning_text = "Some flight files could not be read: " + ", ".join(unreadable)
         types = Counter(flight.fields.aircraft for flight in self.flights)
         durations = [flight.fields.minutes for flight in self.flights if flight.fields.minutes is not None]
         total_minutes = sum(durations)
         time_text = f"{total_minutes // 60}h {total_minutes % 60:02}m" if durations else "Unknown"
         for warning, metrics, rows, recent_table, add in (self.dashboard, self.statistics):
-            warning.setVisible(bool(unreadable))
-            warning.setText(f"{len(unreadable)} unreadable flight file(s) remain in the data folder." if unreadable else "")
+            warning.setVisible(bool(warning_text))
+            warning.setText(warning_text)
             for value, metric in zip((len(self.flights), time_text, len(types)), metrics):
-                metric.setText(str(value))
+                metric.setText("Unavailable" if self.load_error else str(value))
             self.clear_layout(rows)
             if not types:
                 rows.addWidget(label("Saved flights will appear here." if store else "Choose a local data folder in Settings.", "muted", wrap=True))
@@ -233,7 +270,7 @@ class Logbook(QWidget):
             if recent_table is not None:
                 self.populate(recent_table, self.flights[:5])
             if add:
-                add.setEnabled(store is not None)
+                add.setEnabled(store is not None and not self.load_error)
         self.render_history()
 
     @staticmethod
@@ -276,10 +313,10 @@ class Logbook(QWidget):
             if flight.id == selected_id:
                 history_table.selectRow(row)
                 break
-        add.setEnabled(self.store is not None)
+        add.setEnabled(self.store is not None and not self.load_error)
         state.setText(
-            f"{len(self.visible_flights)} of {len(self.flights)} saved flights"
-            if self.store else "Choose a local data folder in Settings."
+            self.load_error or (f"{len(self.visible_flights)} of {len(self.flights)} saved flights"
+                                if self.store else "Choose a local data folder in Settings.")
         )
 
     def open_selected(self):
@@ -310,22 +347,26 @@ class Logbook(QWidget):
         self.detail_layout.addWidget(overview)
         notes, _ = card("Notes", fields.notes or "No notes entered.")
         history, revisions = card("Record History")
+        names = {
+            "flight_date": "date", "aircraft": "aircraft", "departure": "departure",
+            "arrival": "destination", "callsign": "callsign", "registration": "registration",
+            "minutes": "duration", "notes": "notes",
+        }
         previous = None
         for revision in flight.revisions:
             current = revision.fields
-            if previous is None:
-                summary = "Manual record created"
-            else:
-                names = {
-                    "flight_date": "date", "aircraft": "aircraft", "departure": "departure",
-                    "arrival": "destination", "callsign": "callsign", "registration": "registration",
-                    "minutes": "duration", "notes": "notes",
-                }
-                summary = "Edited " + ", ".join(
-                    display for name, display in names.items()
-                    if getattr(previous, name) != getattr(current, name)
-                )
-            revisions.addWidget(label(f"{revision.saved_at.replace('T', ' ').replace('+00:00', ' UTC')}  ·  {summary}", "muted", wrap=True))
+            summary = "Manual record created" if previous is None else "Flight corrected"
+            saved_at = datetime.fromisoformat(revision.saved_at)
+            shown = saved_at.astimezone() if self.use_local_time else saved_at.astimezone(timezone.utc)
+            timestamp = shown.strftime("%Y-%m-%d %H:%M:%S %Z")
+            revisions.addWidget(label(f"{timestamp}  ·  {summary}", "muted", wrap=True))
+            if previous is not None:
+                for name, display in names.items():
+                    before, after = getattr(previous, name), getattr(current, name)
+                    if before != after:
+                        old = "Unknown" if before is None or before == "" else before
+                        new = "Unknown" if after is None or after == "" else after
+                        revisions.addWidget(label(f"{display.capitalize()}: {old} → {new}", wrap=True))
             previous = current
         self.detail_layout.addWidget(notes)
         self.detail_layout.addWidget(history)
@@ -337,7 +378,7 @@ class Logbook(QWidget):
         self.start_editor(None)
 
     def start_editor(self, flight):
-        if self.store is None:
+        if self.store is None or self.load_error:
             return
         self.editing = flight
         self.stack.setCurrentWidget(self.pages["Editor"])
@@ -348,7 +389,7 @@ class Logbook(QWidget):
         try:
             saved = self.store.save(self.editor.values(), self.editing)
         except (OSError, ValueError, TypeError, KeyError, AttributeError) as error:
-            QMessageBox.warning(self, "Flight could not be saved", str(error))
+            QMessageBox.warning(self, "Flight save could not finish", str(error))
             return
         self.selected = saved
         self.refresh(self.store)

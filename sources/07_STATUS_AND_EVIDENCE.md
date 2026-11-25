@@ -34,3 +34,66 @@ R3.1 is the latest complete candidate from the prior Core design, with public pr
 The R3.1 tree and original Main Development handoff were recovered on 23 November 2026. All 44 payload files in `BBC_EFB_Codex_Work_Package_2026-11-23.zip` matched the archive manifest. The 16 R3.1 files also matched the corresponding files in the previous workspace, and the 11 archive report files matched the reports already here. The copied files were verified by SHA-256. The original ZIP remains in the previous workspace's `handoff/` directory. No tests were run as part of recovery. [Recovered candidate](<../reference/01_CODEX_WORK_EVIDENCE/development reviews/BBC_EFB_Black_Box_Core_R3.1_Source_Candidate_2026-11-23/README.md>) · [Original handoff](../reference/01_CODEX_WORK_EVIDENCE/BBC_EFB_Main_Development_Handoff_2026-11-23.md)
 
 Native teardown, reconnect and restore locks, event delivery, data cadence and simulator impact remain unverified. The former evaluation wrapper can conceal native retirement and close failures. Its high-level event callback lacks filename-bearing packets. See preserved reports under `reference/01_CODEX_WORK_EVIDENCE/test_artifacts/` and third-party details under `reference/EXTERNAL_DEPENDENCIES_NOT_BUNDLED.md`. The historical suites were preserved as recorded.
+
+## Manual Logbook storage
+
+25 November 2026. Nine offline cases passed on the workspace Windows Python runtime. They covered yearly save, reopen and edits, retained revisions, required fields, old per-flight records, simulated write failure, three interruption points in a year move, stale edits, a competing writer, damaged data and an annual file containing 5,000 flights. The Logbook UI passed a syntax check. Qt was not launched, and no EFB package or simulator connection was used.
+
+Run the focused suite from the workspace root with the project's Python runtime:
+
+```powershell
+python -B -m unittest discover -s tests -p 'test_logbook_storage_offline.py' -v
+```
+
+## Offline EFB shell
+
+25 November 2026. The source entry point launched into Dispatch and entered the Qt event loop. Five Qt offscreen UI tests passed on Windows using the existing PySide6 Essentials 6.10.2 dependencies. They covered wide and narrow navigation, both In-Flight examples, the footer links, folder selection, manual save/edit/reopen through the Logbook UI, displayed correction history and recalculated totals, the saved time display preference, custom maximise/restore/close controls and discard confirmation. The nine storage checks also passed. Wide Dispatch and narrow In-Flight captures were inspected using the local Segoe UI font. Native window dragging, Windows display scaling, a packaged app and SimConnect remain unverified in this slice.
+
+Run the UI suite from the workspace root using the project Python runtime. The first line applies when using the existing workspace-local PySide6 installation.
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path -LiteralPath '.concept-deps-py312').Path
+python -B -m unittest discover -s tests -p 'test_efb_shell_ui.py' -v
+```
+
+## Offline EFB–Core connection status
+
+25 November 2026. Seven Qt offscreen checks passed, including a simulated connection, loss and reconnect, a provider error with the Core message visible in Connection Diagnostics, and consumer cleanup on window close. The simulated provider was labelled throughout. Flight Logging stayed Inactive and the manual Logbook saved and reopened a record while Core was disconnected. Nine storage checks also passed.
+
+The window takes a host-registered, read-only Core consumer. It reads the connection snapshot every 200 ms when a consumer is attached and releases the handle on close. The host owns the Core session. Normal launch has no provider and stays Disconnected. Native session wiring, simulator version identification and the Recorder remain pending. This check used no native DLL, simulator session or packaged build.
+
+Use the project Python runtime and the workspace-local PySide6 setup above.
+
+```powershell
+python -B -m unittest discover -s tests -p 'test_efb_shell_ui.py' -v
+python -B -m unittest discover -s tests -p 'test_logbook_storage_offline.py' -q
+```
+
+## EFB session host
+
+25 November 2026. The EFB launch path can create one in-process Core with the existing callback-based SimConnect adapter. With an explicit absolute DLL path, Connection Diagnostics offers Connect, then Retry connection after an error or simulator quit. Connecting triggers local DLL loading. One worker owns open, dispatch and close. It waits for pilot action while disconnected and joins on app exit. The ordinary launch stays offline. Simulator identity and automatic Flight Logging are still pending.
+
+All 133 offline tests passed on the project runtime. An injected SDK exercised a failed open, navigation during a pending connection, retry, dispatch of QUIT, reconnect with a new session ID and cleanup of both handles on one worker. A separate check verified that the opt-in DLL load step precedes the first SDK call and that a load failure prevents that call. The launcher's `--help` output was checked. These runs used no native DLL or MSFS session.
+
+Use the project Python runtime and the workspace-local PySide6 setup above.
+
+```powershell
+python -B -m unittest discover -s tests -p 'test_*.py' -q
+python -B -m bbc_efb --help
+```
+
+### Parked EFB read-only check
+
+25 November 2026. The EFB launcher opened one callback-based session from Connection Diagnostics in MSFS 2020. The SimConnect footer changed from Disconnected to Connected. A read-only Core consumer received current live aircraft title, ground speed and on-ground telemetry for the parked Asobo Boeing 747-8i. Ground speed was effectively zero and on-ground was true. Flight Logging stayed Inactive. Closing the EFB closed the SDK handle and returned Core to Disconnected. The SDK call guard reported one Open, one Close and zero blocked calls or simulator writes. This verified the app session on MSFS 2020. Automatic simulator-product identification in the footer and the Recorder are still pending.
+
+The check ran the source launcher through Qt's offscreen platform using a temporary settings file and the verified local DLL. The first invocation could not find the previously used Python runtime in the simulator desktop context and made no connection. The successful run used the installed x64 Python 3.12.10 and the existing workspace-local PySide6 dependencies.
+
+### Separate owner-requested dome light adjustment
+
+After the read-only run had closed, the owner-requested adjustment was made in a separate Core session on the parked Asobo 747-8i. The generic potentiometer and cabin switch events were sent without a change in readback. The aircraft advertised `LIGHTING_CABIN_3` with one `FLOAT64` parameter. Core sent 100 through that aircraft input. Separate SimVar readback confirmed the dome light on at 100%, with the aircraft still on the ground and the parking brake set. The session closed cleanly. This result applies to the tested aircraft input.
+
+### Owner-requested simulated after-landing cleanup
+
+On the parked Asobo 747-8i, the generic `FLAPS_UP` event was sent without a change in readback. The advertised `HANDLING_Flaps` input moved the lever to UP. A later sample confirmed both trailing-edge flap angles at effectively zero. The speedbrake was already stowed and disarmed. Four aircraft-specific landing light inputs were set to OFF and verified independently. The taxi light was already on. The parking brake remained set.
+
+The owner confirmed that the cockpit autobrake selector stayed at **3**. Core's `AUTO BRAKE SWITCH CB` reading stayed at 4, which the installed Boeing knob template maps to detent 3. The SDK accepted `SET_AUTOBRAKE_CONTROL` with value 1, but the selector moved to neither OFF nor DISARM. The aircraft's autobrake knob input returned an empty parameter list and was left unused. The autobrake change failed. All sessions were closed.

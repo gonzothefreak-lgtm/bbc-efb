@@ -1,4 +1,4 @@
-"""Local x64 SimConnect DLL boundary. Loading is explicit and belongs to the host."""
+"""Local x64 SimConnect DLL boundary. The host controls when loading occurs."""
 
 from ctypes import POINTER, addressof, byref, c_char_p, c_float, c_void_p, cast, create_string_buffer, sizeof, string_at
 from pathlib import Path
@@ -14,7 +14,7 @@ class SimConnectSdk:
 
     simulated = False
 
-    def __init__(self, dll_path, *, callback_dispatch=False):
+    def __init__(self, dll_path, *, callback_dispatch=False, load_on_open=False):
         path = Path(dll_path)
         if not path.is_absolute() or path.name.casefold() != "simconnect.dll":
             raise ProviderError("Supply an absolute path to the local SimConnect.dll.")
@@ -22,6 +22,7 @@ class SimConnectSdk:
         self._functions = None
         self._library = None
         self._callback_dispatch = callback_dispatch
+        self._load_on_open = load_on_open
         self._callback_packets = []
         self._callback_failed = False
         self._dispatch_callback = DispatchProc(self._receive_callback)
@@ -52,6 +53,8 @@ class SimConnectSdk:
             raise ProviderError(f"{name} failed with HRESULT 0x{result & 0xFFFFFFFF:08X}.")
 
     def open(self, application):
+        if self._load_on_open:
+            self.load()
         handle = HANDLE()
         # SIMCONNECT_OPEN_CONFIGINDEX_LOCAL bypasses SimConnect.cfg.
         self.call("SimConnect_Open", byref(handle), application, None, 0, None, 0xFFFFFFFF)

@@ -185,6 +185,15 @@ class SimConnectProviderOfflineTests(TestCase):
             self.assertEqual(sdk.open(b"EFB").value, 123)
         self.assertEqual(call.call_args.args[2:], (b"EFB", None, 0, None, 0xFFFFFFFF))
 
+    def test_opt_in_load_on_open_precedes_the_first_sdk_call(self):
+        sdk = SimConnectSdk(Path.cwd() / "SimConnect.dll", load_on_open=True)
+        with patch.object(sdk, "load", side_effect=ProviderError("Fake load error")) as load:
+            with patch.object(sdk, "call") as call:
+                with self.assertRaisesRegex(ProviderError, "Fake load error"):
+                    sdk.open(b"EFB")
+        load.assert_called_once_with()
+        call.assert_not_called()
+
     def test_numeric_fixed_width_text_and_pause_packets(self):
         consumer = self.core.register_consumer()
         speed = consumer.subscribe("aircraft.ground_speed")

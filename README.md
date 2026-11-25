@@ -4,7 +4,9 @@ BBC EFB is a Windows companion app for Microsoft Flight Simulator 2020. Black Bo
 
 ## Working with this repository
 
-Read the [Core consumer API guide](sources/05_CORE_AND_SIMCONNECT.md#consumer-api-developer-guide) for the available calls, the [function dictionary](sources/10_SIMCONNECT_FUNCTION_DICTIONARY.md) for SimConnect coverage, and the [latest offline test report](reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_remaining_sdk_batch_offline_2026-11-24/REPORT.md) for the verification procedure and prerequisites. The workspace currently contains Core, offline tests and EFB drafts. A runnable Windows EFB package is still pending.
+Read the [Core consumer API guide](sources/05_CORE_AND_SIMCONNECT.md#consumer-api-developer-guide) for the available calls, the [function dictionary](sources/10_SIMCONNECT_FUNCTION_DICTIONARY.md) for SimConnect coverage, and the [Core offline test report](reference/01_CODEX_WORK_EVIDENCE/test_artifacts/core_remaining_sdk_batch_offline_2026-11-24/REPORT.md) for verification and prerequisites.
+
+Launch the offline shell from the workspace root with `python -m bbc_efb` using the project Python runtime with PySide6 available. Dispatch opens first. Choose a local data folder and open Logbook to enter and edit manual flights. For an approved live check, the optional `--simconnect-dll PATH` argument takes the absolute path to a local SimConnect DLL and enables **Connect** in Connection Diagnostics. The DLL loads when the pilot selects **Connect**. The parked MSFS 2020 connection check passed. Automatic Flight Logging and the packaged Windows build are pending. [Shell verification](sources/07_STATUS_AND_EVIDENCE.md#offline-efb-shell) · [Live EFB verification](sources/07_STATUS_AND_EVIDENCE.md#parked-efb-read-only-check)
 
 To publish reviewed workspace changes to the private GitHub repository from a Git-authenticated Windows PowerShell session, run `pwsh -File .\publish.ps1 -Message "Describe the change"`. The script checks staged files and local history, commits changes and pushes `main`. First-time Git authentication must be completed using your account's secure credential helper.
 
