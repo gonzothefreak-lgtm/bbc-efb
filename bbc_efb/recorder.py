@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from bbc_core import ConnectionState, ConsumerAPI, CoreRequestError, Event, Gap, Quality, SimVar, ValueType
 
+from .aircraft import aircraft_identity
 from .storage import FlightFields, FlightRecording, FlightStore, RecordingCheckpoint, RecordingGap
 
 
@@ -43,11 +44,14 @@ class FlightRecorder:
     """Drive update serially after Core has delivered telemetry."""
 
     def __init__(self, reader: ConsumerAPI, store: FlightStore, *, real_date=date.today,
-                 elapsed_clock=monotonic):
+                 elapsed_clock=monotonic, retain_landing_rate=True, retain_replay=False):
         self._reader = reader
         self._store = store
         self._real_date = real_date
         self._elapsed_clock = elapsed_clock
+        self.retain_landing_rate = retain_landing_rate
+        self.retain_replay = retain_replay
+        self._replay = []
         self._subscriptions = {}
         self._session = None
         self._last_sample = None
@@ -146,6 +150,7 @@ class FlightRecorder:
             return False
         sample = self._last_good
         self._begin(sample, self._current_source, "manual_start", (sample.time, self._elapsed))
+        self._keep_sample(sample)
         self._checkpoint_dirty = True
         self._checkpoint()
         return True
@@ -163,6 +168,7 @@ class FlightRecorder:
         checkpoint = flight.checkpoint
         self._flight_id = flight.id
         self._date = flight.revisions[0].fields.flight_date
+        self._real_departure = flight.revisions[0].fields.real_departure
         self._aircraft = flight.revisions[0].fields.aircraft
         self._elapsed = recording.block_seconds
         start_key = "manual_start" if recording.manual_start is not None else "gate_out"
@@ -318,7 +324,8 @@ class FlightRecorder:
         landing_speed = (landing.value if landing and landing.quality == Quality.CURRENT
                          and landing.session_id == self._session else None)
         sample = _Sample(value, observed["ground"].value, observed["speed"].value,
-                         observed["brake"].value, observed["aircraft"].value, landing_speed, latitude, longitude)
+                         observed["brake"].value, aircraft_identity(observed["aircraft"].value),
+                         landing_speed, latitude, longitude)
         if self.interrupted_reason:
             previous_candidate = self._resume_candidate
             self._resume_candidate = ((connection.session_id, sample)
@@ -362,6 +369,8 @@ class FlightRecorder:
         self._ready = True
         self._current_source = connection.source
         self._advance(sample, connection.source)
+        if self._flight_id is not None:
+            self._keep_sample(sample)
         if self._pending is not None:
             return self._save()
         if self._flight_id is not None and (
@@ -415,6 +424,7 @@ class FlightRecorder:
         self._events[start_key] = mark
         self._flight_id = str(uuid4())
         self._date = self._real_date().isoformat()
+        self._real_departure = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self._aircraft = sample.aircraft
         self._source = (source.name, source.simulated)
         self._manual_start_airborne = start_key == "manual_start" and not sample.ground
@@ -452,6 +462,8 @@ class FlightRecorder:
                 self._landing_rate = rate
 
     def _request_landing(self):
+        if not self.retain_landing_rate or "landing" in self._subscriptions:
+            return
         try:
             self._subscriptions["landing"] = self._subscribe(
                 "PLANE TOUCHDOWN NORMAL VELOCITY", "feet per second", ValueType.NUMBER,
@@ -495,10 +507,12 @@ class FlightRecorder:
             takeoff[1] - self._start_mark[1] if takeoff else None,
         )
         self._saved = self._store.save_recording(
-            self._flight_id, FlightFields(self._date, self._aircraft, "Unknown", "Unknown"),
+            self._flight_id, FlightFields(self._date, self._aircraft, "Unknown", "Unknown",
+                                          real_departure=self._real_departure),
             self._recording(gaps=self._gaps if gaps is None else gaps), checkpoint=checkpoint,
             previous=self._saved,
         )
+        self._save_replay(self._saved)
         if "manual_start" in self._events and self._stopped is not None:
             self._set_hold(None)
         self._last_checkpoint = self._elapsed_clock()
@@ -510,17 +524,31 @@ class FlightRecorder:
     def _prepare_save(self, recording):
         block = recording.block_seconds
         fields = FlightFields(self._date, self._aircraft, "Unknown", "Unknown",
-                              minutes=round(block / 60) if block < 599970 else None)
+                              minutes=round(block / 60) if block < 599970 else None,
+                              real_departure=self._real_departure)
         self._pending = (self._flight_id, fields, recording)
 
     def _save(self):
         flight = self._store.save_recording(*self._pending, previous=self._saved, manual_hold=self._pending_hold)
+        self._save_replay(flight)
         stopped = self._pending_hold is not None
         self._reset()
         if stopped:
             self._stopped = flight
         self._parked_before_departure = not stopped
         return flight
+
+    def _save_replay(self, flight):
+        if self._replay:
+            self._store.append_replay(flight, self._replay)
+            self._replay.clear()
+
+    def _keep_sample(self, sample):
+        if self.retain_replay:
+            self._replay.append({
+                "sim_time": _iso(sample.time), "latitude": sample.latitude, "longitude": sample.longitude,
+                "ground_speed": sample.speed, "on_ground": sample.ground, "phase": self._phase,
+            })
 
     def _reset(self):
         self._pending = None

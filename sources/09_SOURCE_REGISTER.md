@@ -16,6 +16,8 @@ The owner confirmed the Codex Source authority cutover on 23 November 2026. The 
 
 The illustrated [Logbook Design Record](BBC_EFB_Logbook_Design_Record.docx) and [UI Design Standards](BBC_EFB_UI_Design_Standards.docx) are in `sources/`. The seven text masters remain under `reference/00_CURRENT_PROJECT_SOURCE_MASTERS/`. Preserve illustrations and consult them for detailed design. `reference/` also holds the migration handoff, original instruction excerpts, chat decisions, dependency notes and test reports. The preserved 22 November Project Instructions have not been independently compared with the old Project Settings; review any later verbatim copy with the owner. Full old chat exports are optional where they add no unique decisions.
 
+The owner reaffirmed the [Dashboard layout reference](<../reference/04_REFERENCE_ASSETS/BBC EFB Logbook Dashboard and main UI idea 1.png>) on 25 November 2026. The workspace copy matches the image supplied in chat. Apply its layout to the Logbook Dashboard with the current styling, navigation and footer decisions.
+
 The verified preservation ZIP remains the transfer record for source candidates, raw test evidence, historical archives, and reference assets. This clean documentation set does not duplicate executable dependencies or move the working Core candidate.
 
 The nine masters in the previous workspace's `handoff/CODEX_NEW_PROJECT_STARTER` match this workspace's preserved copies by SHA-256. The separate `project sources/01_CURRENT_PROJECT_SOURCE_MASTERS` folder in that workspace contains eight superseded revisions and the unchanged founding prompt. Use the current revisions listed above for the fresh Core design.

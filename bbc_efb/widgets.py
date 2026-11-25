@@ -1,10 +1,28 @@
 """Shared Qt Widgets used by the EFB sections."""
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QFrame, QHeaderView, QLabel, QPushButton, QScrollArea,
     QTableWidget, QVBoxLayout, QWidget,
 )
+
+from .aircraft import aircraft_profile
+
+
+def aircraft_picture(name, *, height, width):
+    profile = aircraft_profile(name)
+    if profile is None or not profile.drawing.is_file():
+        return None
+    pixmap = QPixmap(str(profile.drawing))
+    if pixmap.isNull():
+        return None
+    widget = QLabel()
+    widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    widget.setAccessibleName(f"Side-view drawing of {profile.name}")
+    widget.setPixmap(pixmap.scaled(width, height, Qt.AspectRatioMode.KeepAspectRatio,
+                                   Qt.TransformationMode.SmoothTransformation))
+    return widget
 
 
 def label(text, style="", wrap=False):

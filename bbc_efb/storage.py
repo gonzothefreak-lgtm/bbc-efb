@@ -10,6 +10,8 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from uuid import UUID, uuid4
 
+from .aircraft import aircraft_identity, aircraft_type_code
+
 
 class RecordConflict(ValueError):
     """The record changed since it was opened."""
@@ -25,6 +27,23 @@ class FlightFields:
     registration: str = ""
     minutes: int | None = None
     notes: str = ""
+    aircraft_code: str = ""
+    real_departure: str = ""
+    planned_departure: str = ""
+    planned_arrival: str = ""
+    actual_arrival: str = ""
+    planned_nm: float | None = None
+    flown_nm: float | None = None
+    flight_kind: str = ""
+    operating_region: str = ""
+    crew: int | None = None
+    passengers: int | None = None
+    baggage_kg: float | None = None
+    freight_kg: float | None = None
+
+    @property
+    def visited_arrival(self):
+        return self.actual_arrival or self.arrival
 
     def validated(self):
         if self.minutes is not None and (
@@ -32,14 +51,30 @@ class FlightFields:
         ):
             raise ValueError("Enter a duration from 0 to 9,999 minutes.")
         flight_date = date.fromisoformat(self.flight_date).isoformat()
-        aircraft = self.aircraft.strip().upper()
+        aircraft = aircraft_identity(self.aircraft)
         departure = self.departure.strip().upper()
         arrival = self.arrival.strip().upper()
         if not all((aircraft, departure, arrival)):
             raise ValueError("Aircraft type, departure and destination are required.")
-        return FlightFields(
-            flight_date, aircraft, departure, arrival, self.callsign.strip().upper(),
-            self.registration.strip().upper(), self.minutes, self.notes.strip(),
+        for value in (self.crew, self.passengers):
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError("Crew and passenger counts must be whole numbers of zero or more.")
+        for value in (self.planned_nm, self.flown_nm, self.baggage_kg, self.freight_kg):
+            if value is not None and (type(value) not in (int, float) or not isfinite(value) or value < 0):
+                raise ValueError("Distances and weights must be finite numbers of zero or more.")
+        real_departure = self.real_departure.strip()
+        if real_departure:
+            stamp = datetime.fromisoformat(real_departure)
+            if stamp.utcoffset() is None:
+                raise ValueError("Real departure time needs a time zone, for example 2026-11-25T03:30Z.")
+            real_departure = stamp.astimezone(timezone.utc).isoformat()
+        return replace(
+            self, flight_date=flight_date, aircraft=aircraft, departure=departure, arrival=arrival,
+            callsign=self.callsign.strip().upper(), registration=self.registration.strip().upper(),
+            notes=self.notes.strip(), aircraft_code=aircraft_type_code(aircraft), real_departure=real_departure,
+            planned_departure=self.planned_departure.strip().upper(),
+            planned_arrival=self.planned_arrival.strip().upper(), actual_arrival=self.actual_arrival.strip().upper(),
+            flight_kind=self.flight_kind.strip(), operating_region=self.operating_region.strip(),
         )
 
 
@@ -47,6 +82,7 @@ class FlightFields:
 class Revision:
     saved_at: str
     fields: FlightFields
+    source: str = ""
 
 
 @dataclass(frozen=True)
@@ -54,6 +90,10 @@ class RecordingGap:
     after: str
     before: str | None = None
     reason: str = ""
+
+    @property
+    def review_key(self):
+        return f"{self.after}|{self.reason}"
 
 
 @dataclass(frozen=True)
@@ -141,10 +181,26 @@ class Flight:
     recording: FlightRecording | None = None
     checkpoint: RecordingCheckpoint | None = None
     manual_hold: str | None = None
+    acknowledged_gaps: tuple[str, ...] = ()
+    import_refs: tuple[tuple[str, str], ...] = ()
+    reported_landing_rate: float | None = None
+    reported_landing_source: str = ""
 
     @property
     def fields(self):
         return self.revisions[-1].fields
+
+    @property
+    def landing_rate(self):
+        if self.recording is not None and self.recording.landing_rate_fpm is not None:
+            return self.recording.landing_rate_fpm
+        return self.reported_landing_rate
+
+    @property
+    def pending_gaps(self):
+        if self.recording is None or self.recording.simulated:
+            return ()
+        return tuple(gap for gap in self.recording.gaps if gap.review_key not in self.acknowledged_gaps)
 
 
 class FlightStore:
@@ -192,7 +248,7 @@ class FlightStore:
         recording = payload.get("recording")
         checkpoint = payload.get("checkpoint")
         manual_hold = payload.get("manual_hold")
-        if source not in ("manual", "automatic") or status not in ("complete", "interrupted") or (
+        if source not in ("manual", "automatic", "imported") or status not in ("complete", "interrupted") or (
             (source == "automatic") != (recording is not None)
             or status == "interrupted" and source != "automatic"
             or checkpoint is not None and status != "interrupted"
@@ -214,10 +270,22 @@ class FlightStore:
             saved_at = datetime.fromisoformat(item["saved_at"])
             if saved_at.utcoffset() is None:
                 raise ValueError("A record revision is missing its time zone.")
-            revisions.append(Revision(item["saved_at"], FlightFields(**item["fields"]).validated()))
+            revisions.append(Revision(item["saved_at"], FlightFields(**item["fields"]).validated(), item.get("source", "")))
         if not revisions:
             raise ValueError("The record has no revisions.")
-        return Flight(flight_id, tuple(revisions), source, status, recording, checkpoint, manual_hold)
+        acknowledgements = tuple(payload.get("acknowledged_gaps", ()))
+        keys = {gap.review_key for gap in recording.gaps} if recording is not None and not recording.simulated else set()
+        if any(key not in keys for key in acknowledgements):
+            raise ValueError("Acknowledgement does not refer to a native Recorder gap.")
+        imports = tuple(tuple(ref) for ref in payload.get("import_refs", ()))
+        if any(len(ref) != 2 or any(not isinstance(value, str) or not value for value in ref) for ref in imports):
+            raise ValueError("Invalid source record reference.")
+        rate = payload.get("reported_landing_rate")
+        rate_source = payload.get("reported_landing_source", "")
+        if rate is not None and (type(rate) not in (int, float) or not isfinite(rate) or rate > 0 or not rate_source):
+            raise ValueError("Invalid imported landing rate.")
+        return Flight(flight_id, tuple(revisions), source, status, recording, checkpoint, manual_hold,
+                      acknowledgements, imports, rate, rate_source)
 
     @staticmethod
     def _read_json(path):
@@ -270,39 +338,142 @@ class FlightStore:
 
     def listing(self):
         with self._locked():
-            flights = {}
-            locations = {}
-            unreadable = set()
-            year_paths = set(self._year_paths())
-            for path in sorted(year_paths):
+            return self._listing()
+
+    def _listing(self):
+        flights = {}
+        locations = {}
+        unreadable = set()
+        year_paths = set(self._year_paths())
+        for path in sorted(year_paths):
+            try:
+                for flight in self._read_year(path).values():
+                    if flight.id in locations:
+                        unreadable.update((path.name, locations[flight.id]))
+                        flights.pop(flight.id, None)
+                    else:
+                        flights[flight.id] = flight
+                        locations[flight.id] = path.name
+            except (OSError, ValueError):
+                unreadable.add(path.name)
+        # A damaged year may contain a newer version of a legacy flight.
+        legacy_paths = [] if unreadable else sorted(self.records.glob("*.json"))
+        for path in legacy_paths:
+            if path in year_paths or path.stem in locations:
+                continue
+            try:
+                flight = self._read_legacy(path)
+                flights[flight.id] = flight
+            except (OSError, ValueError, TypeError, KeyError, AttributeError):
+                unreadable.add(path.name)
+        ordered = sorted(flights.values(), reverse=True,
+                         key=lambda flight: (flight.fields.flight_date, flight.revisions[0].saved_at))
+        return ordered, sorted(unreadable)
+
+    def apply_import(self, preview_records, changes):
+        with self._locked():
+            records, unreadable = self._listing()
+            if unreadable or tuple(records) != preview_records:
+                raise RecordConflict("The Logbook changed after preview. Open a new import preview.")
+            written = 0
+            for change in changes:
+                existing = change.existing
+                saved_at = datetime.now(timezone.utc).isoformat()
+                revision = Revision(saved_at, change.fields, change.reference[0])
+                if existing is None:
+                    flight = Flight(str(uuid4()), (revision,), source="imported")
+                else:
+                    flight = next(item for item in records if item.id == existing.id)
+                    flight = replace(flight, revisions=(*flight.revisions, revision))
+                flight = replace(
+                    flight, import_refs=(*flight.import_refs, change.reference),
+                    reported_landing_rate=change.rate, reported_landing_source=change.rate_source,
+                )
                 try:
-                    for flight in self._read_year(path).values():
-                        if flight.id in locations:
-                            unreadable.update((path.name, locations[flight.id]))
-                            flights.pop(flight.id, None)
-                        else:
-                            flights[flight.id] = flight
-                            locations[flight.id] = path.name
-                except (OSError, ValueError):
-                    unreadable.add(path.name)
-            # A damaged year may contain a newer version of a legacy flight.
-            legacy_paths = [] if unreadable else sorted(self.records.glob("*.json"))
-            for path in legacy_paths:
-                if path in year_paths or path.stem in locations:
-                    continue
-                try:
-                    flight = self._read_legacy(path)
-                    flights[flight.id] = flight
-                except (OSError, ValueError, TypeError, KeyError, AttributeError):
-                    unreadable.add(path.name)
-            ordered = sorted(flights.values(), reverse=True,
-                             key=lambda flight: (flight.fields.flight_date, flight.revisions[0].saved_at))
-            return ordered, sorted(unreadable)
+                    self._replace_record(flight)
+                except (OSError, ValueError) as error:
+                    raise RecordConflict(f"Import stopped after saving {written} rows. Preview the file again. {error}") from error
+                written += 1
+            return written
 
     def save(self, fields, existing=None):
         fields = fields.validated()
         with self._locked():
             return self._save_locked(fields, existing)
+
+    def acknowledge_gap(self, flight_id, key):
+        with self._locked():
+            flight, _ = self._find(str(UUID(flight_id)))
+            if key in flight.acknowledged_gaps:
+                return flight
+            if not any(gap.review_key == key for gap in flight.pending_gaps):
+                raise RecordConflict("This Recorder gap is no longer available.")
+            flight = replace(flight, acknowledged_gaps=(*flight.acknowledged_gaps, key))
+            self._replace_record(flight)
+            return flight
+
+    def _replace_record(self, flight):
+        year = flight.fields.flight_date[:4]
+        flights = self._read_year_for_save(year)
+        flights[flight.id] = flight
+        self._write_year(year, flights)
+
+    def append_replay(self, flight, samples):
+        start = date.fromisoformat(flight.revisions[0].fields.flight_date)
+        quarter = (start.month - 1) // 3 + 1
+        path = self.records / f"replay-{start.year:04}-Q{quarter}.jsonl"
+        batch = json.dumps({"flight_id": flight.id, "samples": samples}, allow_nan=False).encode("utf-8") + b"\n"
+        with self._locked(), path.open("a+b") as handle:
+            # A killed process may have left an incomplete batch at the end.
+            offset = handle.seek(0, os.SEEK_END)
+            while offset:
+                start = max(0, offset - 4096)
+                handle.seek(start)
+                newline = handle.read(offset - start).rfind(b"\n")
+                if newline >= 0:
+                    offset = start + newline + 1
+                    break
+                offset = start
+            handle.truncate(offset)
+            handle.seek(0, os.SEEK_END)
+            offset = handle.tell()
+            try:
+                handle.write(batch)
+                handle.flush()
+                os.fsync(handle.fileno())
+            except OSError:
+                handle.truncate(offset)
+                raise
+
+    def replay_batches(self):
+        batches = {}
+        for path in sorted(self.records.glob("replay-????-Q[1-4].jsonl")):
+            data = path.read_bytes()
+            batches[path.name] = data[:data.rfind(b"\n") + 1].decode("utf-8")
+        return batches
+
+    def landing_replay(self, flight):
+        if flight.recording is None or flight.recording.touchdown is None:
+            return []
+        start = date.fromisoformat(flight.revisions[0].fields.flight_date)
+        quarter = (start.month - 1) // 3 + 1
+        path = self.records / f"replay-{start.year:04}-Q{quarter}.jsonl"
+        touchdown = datetime.fromisoformat(flight.recording.touchdown)
+        samples = {}
+        with self._locked():
+            if not path.exists():
+                return []
+            with path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.endswith("\n"):
+                        break
+                    batch = json.loads(line)
+                    if batch["flight_id"] == flight.id:
+                        for sample in batch["samples"]:
+                            stamp = datetime.fromisoformat(sample["sim_time"])
+                            if -30 <= (stamp - touchdown).total_seconds() <= 20:
+                                samples[stamp] = sample
+        return [samples[stamp] for stamp in sorted(samples)]
 
     def save_recording(self, flight_id, fields, recording, *, checkpoint=None, previous=None, manual_hold=None):
         flight_id = str(UUID(flight_id))

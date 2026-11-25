@@ -91,7 +91,7 @@ class EfbShellUiTests(TestCase):
         self.pick_folder()
         self.click(self.window.section_buttons["Logbook"])
         logbook = self.window.logbook
-        self.click(logbook.dashboard[4])
+        self.click(logbook.dashboard.new_flight)
         for name, value in (("aircraft", "A320"), ("departure", "YMML"), ("arrival", "YSSY")):
             logbook.editor.text_fields[name].setText(value)
         logbook.editor.minutes.setValue(80)
@@ -286,7 +286,7 @@ class EfbShellUiTests(TestCase):
         captions = [item.text() for item in reopened.logbook.detail.findChildren(self.label_type)]
         self.assertIn("Duration: 80 → 84", captions)
         self.assertEqual([revision.fields.minutes for revision in reopened.logbook.selected.revisions], [80, 84])
-        self.assertEqual([metric.text() for metric in reopened.logbook.dashboard[1]], ["1", "1h 24m", "1"])
+        self.assertEqual([metric.text() for metric in reopened.logbook.dashboard.metrics], ["1", "1h 24m", "—", "—", "—"])
         self.assertEqual(len(list((self.data / "flights").glob("flights-*.json"))), 1)
         self.assertTrue(reopened.close())
 
@@ -370,7 +370,7 @@ class EfbShellUiTests(TestCase):
         self.click(reopened.logbook.nav["Flight History"])
         history = reopened.logbook.history[1]
         self.assertEqual(history.item(0, 7).text(), "Interrupted")
-        self.assertEqual(reopened.logbook.dashboard[1][0].text(), "0")
+        self.assertEqual(reopened.logbook.dashboard.metrics[0].text(), "0")
         history.selectRow(0)
         self.click(self.find_button(reopened, "Open flight"))
         captions = [item.text() for item in reopened.logbook.detail.findChildren(self.label_type)]

@@ -5,6 +5,7 @@ QFrame#top { background: #080f19; border-bottom: 1px solid #283b50; }
 QFrame#footer { background: #0a121b; border-top: 1px solid #2a4055; }
 QFrame#sidebar { background: #101b28; border: 1px solid #243548; border-radius: 9px; }
 QFrame#card { background: #142131; border: 1px solid #283b50; border-radius: 9px; }
+QFrame#aircraftTile { background: #192a3c; border: 1px solid #344b61; border-radius: 8px; }
 QLabel#brand { font-size: 19px; font-weight: 700; color: #f1f7ff; }
 QLabel#brandMark { background: #10558a; color: #e9f6ff; border-radius: 6px;
                     font-size: 11px; font-weight: 700; }

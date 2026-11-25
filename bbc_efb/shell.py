@@ -5,17 +5,18 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
-    QMainWindow, QMessageBox, QSizeGrip, QStackedWidget, QTabWidget, QVBoxLayout,
+    QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
+    QMainWindow, QMessageBox, QSizeGrip, QStackedWidget, QTabWidget, QTableWidgetItem, QVBoxLayout,
     QWidget,
 )
 
 from bbc_core import ConnectionState, ConsumerAPI
 
 from .logbook import Logbook
+from .logbook_data import export_csv, preview_csv, restore_backup, write_backup
 from .recorder import FlightRecorder
 from .storage import FlightStore
-from .widgets import button, card, label, page, scroll
+from .widgets import button, card, label, page, scroll, table
 
 
 ICON_PATH = (Path(__file__).resolve().parent.parent / "reference" / "04_REFERENCE_ASSETS"
@@ -77,7 +78,7 @@ class EfbWindow(QMainWindow):
         layout.addWidget(self._make_title_bar())
 
         self.sections = QStackedWidget()
-        self.logbook = Logbook()
+        self.logbook = Logbook(self.settings)
         self.pages = {
             "Dispatch": scroll(self._make_dispatch()),
             "In-Flight": self._make_in_flight(),
@@ -232,7 +233,14 @@ class EfbWindow(QMainWindow):
         self.choose_folder_button = button("Choose Logbook folder", self._choose_folder, "primary")
         folder_layout.addWidget(self.choose_folder_button, alignment=Qt.AlignmentFlag.AlignLeft)
         data_layout.addWidget(folder_card)
-        tools, _ = card("Import, export and backup", "These tools are in development.")
+        tools, tool_layout = card("Import, export and backup")
+        for caption, action in (
+            ("Import CSV", self._import_logbook),
+            ("Export all flights as CSV", lambda: self._save_logbook_copy(False)),
+            ("Create Logbook backup", lambda: self._save_logbook_copy(True)),
+            ("Restore backup to an empty folder", self._restore_logbook),
+        ):
+            tool_layout.addWidget(button(caption, action), alignment=Qt.AlignmentFlag.AlignLeft)
         data_layout.addWidget(tools)
         time, time_layout = card("Time display")
         self.time_zone = QComboBox()
@@ -268,15 +276,97 @@ class EfbWindow(QMainWindow):
         self.auto_logging = QCheckBox("Enable automatic Flight Logging")
         self.auto_logging.setChecked(self.settings.value("recorder/enabled", False, bool))
         self.auto_logging.toggled.connect(self._toggle_recorder)
+        self.keep_landing_rate = QCheckBox("Save classic landing rate")
+        self.keep_landing_rate.setChecked(self.settings.value("recorder/landingRate", True, bool))
+        self.keep_landing_rate.toggled.connect(
+            lambda enabled: self._set_capture_preference("landingRate", "retain_landing_rate", enabled)
+        )
+        self.keep_replay = QCheckBox("Save replay samples, including aircraft positions")
+        self.keep_replay.setChecked(self.settings.value("recorder/replay", False, bool))
+        self.keep_replay.toggled.connect(
+            lambda enabled: self._set_capture_preference("replay", "retain_replay", enabled)
+        )
+        logging_layout.addWidget(self.auto_logging)
+        logging_layout.addWidget(label("Capture changes apply to future writes. Saved flights and replays stay in your Logbook folder.", "muted", wrap=True))
         self.recorder_notice = label("", "muted", wrap=True)
         self.resume_flight = button("Resume flight", self._resume_recording, "primary")
         self.keep_partial_flight = button("Keep partial flight", self._keep_partial)
-        for item in (self.auto_logging, self.recorder_notice, self.resume_flight, self.keep_partial_flight):
+        for item in (self.keep_landing_rate, self.keep_replay, self.recorder_notice, self.resume_flight, self.keep_partial_flight):
             logging_layout.addWidget(item, alignment=Qt.AlignmentFlag.AlignLeft)
         privacy_layout.addWidget(retention)
         privacy_layout.addStretch()
         self.settings_tabs.addTab(scroll(privacy), "Flight Logging & Privacy")
         return view
+
+    def _import_logbook(self):
+        store = self.logbook.store
+        if store is None:
+            QMessageBox.information(self, "Logbook folder required", "Choose a Logbook data folder first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Import flights from CSV", "", "CSV files (*.csv)")
+        if not path:
+            return
+        try:
+            records, results, changes = preview_csv(store, Path(path))
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Preview Logbook import")
+            dialog.resize(800, 430)
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(label(f"{len(changes)} rows ready to import. Review and invalid rows will be skipped.", wrap=True))
+            rows = table(("CSV row", "Action", "Report"))
+            rows.setRowCount(len(results))
+            for row, values in enumerate(results):
+                for column, value in enumerate(values):
+                    item = QTableWidgetItem(str(value))
+                    item.setToolTip(str(value))
+                    rows.setItem(row, column, item)
+            layout.addWidget(rows, 1)
+            controls = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+            proceed = controls.addButton("Apply import", QDialogButtonBox.ButtonRole.AcceptRole)
+            proceed.setEnabled(bool(changes))
+            controls.accepted.connect(dialog.accept)
+            controls.rejected.connect(dialog.reject)
+            layout.addWidget(controls)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            count = store.apply_import(records, changes)
+            QMessageBox.information(self, "Logbook import completed", f"Saved {count} report rows.")
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            QMessageBox.warning(self, "Logbook import could not finish", str(error))
+        finally:
+            self.logbook.refresh(store)
+
+    def _save_logbook_copy(self, backup):
+        store = self.logbook.store
+        if store is None:
+            QMessageBox.information(self, "Logbook folder required", "Choose a Logbook data folder first.")
+            return
+        caption = "Create Logbook backup" if backup else "Export all flights as CSV"
+        name = "logbook-backup.json" if backup else "flights.csv"
+        file_filter = "JSON files (*.json)" if backup else "CSV files (*.csv)"
+        path, _ = QFileDialog.getSaveFileName(self, caption, name, file_filter)
+        if not path:
+            return
+        try:
+            save = write_backup if backup else export_csv
+            count = save(store, Path(path))
+            QMessageBox.information(self, caption, f"Saved {count} flight records to {path}.")
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            QMessageBox.warning(self, "Could not save Logbook copy", str(error))
+
+    def _restore_logbook(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Open Logbook backup", "", "JSON files (*.json)")
+        if not path:
+            return
+        folder = QFileDialog.getExistingDirectory(self, "Choose an empty restore folder")
+        if not folder:
+            return
+        try:
+            count = restore_backup(Path(path), Path(folder))
+            QMessageBox.information(self, "Logbook backup restored",
+                                    f"Restored {count} flights. Choose {folder} as your Logbook folder to open them.")
+        except (OSError, ValueError, TypeError, KeyError, AttributeError) as error:
+            QMessageBox.warning(self, "Could not restore Logbook backup", str(error))
 
     def _make_footer(self):
         footer = QFrame()
@@ -303,6 +393,13 @@ class EfbWindow(QMainWindow):
         self.settings.sync()
         self._configure_recorder()
 
+    def _set_capture_preference(self, key, attribute, enabled):
+        self.settings.setValue(f"recorder/{key}", enabled)
+        self.settings.sync()
+        if self._recorder is not None:
+            setattr(self._recorder, attribute, enabled)
+        self._refresh_recorder_status()
+
     def _configure_recorder(self):
         if self._recorder is not None:
             self._recorder_timer.stop()
@@ -311,7 +408,10 @@ class EfbWindow(QMainWindow):
         self._recorder_error = ""
         if self._register_recorder is not None and self.logbook.store is not None and self.auto_logging.isChecked():
             try:
-                self._recorder = FlightRecorder(self._register_recorder(), self.logbook.store)
+                self._recorder = FlightRecorder(
+                    self._register_recorder(), self.logbook.store,
+                    retain_landing_rate=self.keep_landing_rate.isChecked(), retain_replay=self.keep_replay.isChecked(),
+                )
             except (OSError, ValueError) as error:
                 self._recorder_error = str(error)
             else:
@@ -330,6 +430,8 @@ class EfbWindow(QMainWindow):
         locked = recorder is not None and recorder.flight_id is not None
         can_enable = self._register_recorder is not None and self.logbook.store is not None
         self.auto_logging.setEnabled(can_enable and not locked)
+        self.keep_landing_rate.setEnabled(not locked)
+        self.keep_replay.setEnabled(not locked)
         self.choose_folder_button.setEnabled(not locked)
         self.resume_flight.setVisible(recorder is not None and recorder.can_resume)
         self.keep_partial_flight.setVisible(status == "Interrupted")
@@ -348,13 +450,14 @@ class EfbWindow(QMainWindow):
             elif recorder is not None and recorder.waiting_for_next_flight:
                 notice = "Logging was stopped for this flight. You can start again manually."
             else:
-                notice = "Records flight events and landing rate when available. Raw replay is off."
+                notice = "Records flight events. Replay capture is " + ("on." if self.keep_replay.isChecked() else "off.")
         if notice != self.recorder_notice.text():
             self.recorder_notice.setText(notice)
 
     def _start_logging(self):
         try:
-            self._recorder.start()
+            if self._recorder.start():
+                self.logbook.refresh(self.logbook.store)
         except (OSError, ValueError) as error:
             self._recorder_error = str(error)
             QMessageBox.warning(self, "Flight Logging could not start", str(error))
@@ -392,13 +495,15 @@ class EfbWindow(QMainWindow):
             self._recorder_error = f"Flight Logging could not save or read the recording. {error}"
         else:
             self._recorder_error = ""
-            if saved is not None or recorder.status == "Interrupted" and (had_error or status != "Interrupted"):
+            if saved is not None or (recorder.status in ("Active", "Interrupted") and
+                                     (had_error or status != recorder.status)):
                 self.logbook.refresh(self.logbook.store)
         self._refresh_recorder_status()
 
     def _resume_recording(self):
         try:
-            self._recorder.resume()
+            if self._recorder.resume():
+                self.logbook.refresh(self.logbook.store)
         except (OSError, ValueError) as error:
             QMessageBox.warning(self, "Flight could not resume", str(error))
         self._refresh_recorder_status()
@@ -488,7 +593,8 @@ class EfbWindow(QMainWindow):
         self.settings.setValue("display/time-zone", mode)
         self.settings.sync()
         self.logbook.use_local_time = mode == "local"
-        if self.logbook.selected is not None and self.logbook.stack.currentWidget() is self.logbook.pages["Details"]:
+        self.logbook._render_gaps()
+        if self.logbook.selected is not None and not self.logbook.pages["Details"].isHidden():
             self.logbook.open_details(self.logbook.selected)
 
     def toggle_maximised(self):
