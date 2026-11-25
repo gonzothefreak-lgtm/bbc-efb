@@ -12,6 +12,7 @@ from bbc_core import ConnectionState, Core, CoreRequestError
 from bbc_core.provider import ProviderError
 from bbc_core.simconnect_abi import Receive, ReceiveId
 from bbc_core.simulated import SimulatedProvider
+from test_flight_recorder_offline import RecorderReplay
 from test_simconnect_provider_offline import FakeSdk, packet
 
 
@@ -287,6 +288,32 @@ class EfbShellUiTests(TestCase):
         self.assertEqual([revision.fields.minutes for revision in reopened.logbook.selected.revisions], [80, 84])
         self.assertEqual([metric.text() for metric in reopened.logbook.dashboard[1]], ["1", "1h 24m", "1"])
         self.assertEqual(len(list((self.data / "flights").glob("flights-*.json"))), 1)
+        self.assertTrue(reopened.close())
+
+    def test_automatic_flight_reappears_in_history_with_read_only_landing_rate(self):
+        self.pick_folder()
+        replay = RecorderReplay(self.window.logbook.store)
+        self.addCleanup(replay.close)
+        flight = replay.approach_and_park()
+        self.assertTrue(self.window.close())
+
+        reopened = self.open_window()
+        self.click(reopened.section_buttons["Logbook"])
+        self.click(reopened.logbook.nav["Flight History"])
+        history = reopened.logbook.history[1]
+        self.assertEqual(history.rowCount(), 1)
+        self.assertEqual(history.item(0, 1).text(), "OFFLINE 747")
+        self.assertEqual(history.item(0, 6).text(), "-180 fpm")
+        history.selectRow(0)
+        self.click(self.find_button(reopened, "Open flight"))
+        captions = [item.text() for item in reopened.logbook.detail.findChildren(self.label_type)]
+        self.assertIn("Automatically recorded flight (simulated)", captions)
+        self.assertIn("Landing rate   -180 fpm", captions)
+        self.click(self.find_button(reopened, "Edit flight"))
+        reopened.logbook.editor.text_fields["arrival"].setText("YSSY")
+        self.click(reopened.logbook.editor.save_button)
+        self.assertEqual(reopened.logbook.selected.id, flight.id)
+        self.assertEqual(reopened.logbook.selected.recording, flight.recording)
         self.assertTrue(reopened.close())
 
     def test_cancel_keeps_unsaved_edits_open_and_discard_allows_close(self):

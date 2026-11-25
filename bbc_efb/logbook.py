@@ -1,4 +1,4 @@
-"""Manual flight entry, History, record details and record-based summaries."""
+"""Flight entry, History, record details and record-based summaries."""
 
 from collections import Counter
 from datetime import datetime, timezone
@@ -215,7 +215,7 @@ class Logbook(QWidget):
         open_button.setEnabled(False)
         search_row.addWidget(open_button)
         layout.addLayout(search_row)
-        history_table = table(self.HEADERS)
+        history_table = table((*self.HEADERS, "Landing rate"))
         history_table.setObjectName("flightHistory")
         history_table.verticalHeader().setDefaultSectionSize(28)
         history_table.setMinimumHeight(325)
@@ -284,7 +284,7 @@ class Logbook(QWidget):
                 item.layout().deleteLater()
 
     @staticmethod
-    def populate(widget, flights):
+    def populate(widget, flights, *, show_landing_rate=False):
         widget.clearSelection()
         widget.setRowCount(len(flights))
         for row, flight in enumerate(flights):
@@ -292,6 +292,9 @@ class Logbook(QWidget):
             duration = "Unknown" if fields.minutes is None else f"{fields.minutes} min"
             values = (fields.flight_date, fields.aircraft, fields.departure, fields.arrival,
                       fields.callsign or "—", duration)
+            if show_landing_rate:
+                rate = flight.recording.landing_rate_fpm if flight.recording is not None else None
+                values += ("—" if rate is None else f"{rate:g} fpm",)
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 item.setToolTip(value)
@@ -308,7 +311,7 @@ class Logbook(QWidget):
                 flight.fields.arrival, flight.fields.callsign, flight.fields.registration,
             )).casefold()
         ]
-        self.populate(history_table, self.visible_flights)
+        self.populate(history_table, self.visible_flights, show_landing_rate=True)
         for row, flight in enumerate(self.visible_flights):
             if flight.id == selected_id:
                 history_table.selectRow(row)
@@ -335,7 +338,13 @@ class Logbook(QWidget):
         self.detail_layout.addLayout(top)
         profile, profile_layout = card(f"{fields.departure}  →  {fields.arrival}")
         profile_layout.addWidget(label(f"{fields.aircraft}  ·  {fields.flight_date}", "metric", wrap=True))
-        profile_layout.addWidget(label("Pilot-entered flight", "muted"))
+        recording = flight.recording
+        origin = "Pilot-entered flight"
+        if recording is not None:
+            origin = "Automatically recorded flight"
+            if recording.simulated:
+                origin += " (simulated)"
+        profile_layout.addWidget(label(origin, "muted"))
         self.detail_layout.addWidget(profile)
         overview, overview_layout = card("Overview")
         for caption, value in (
@@ -345,6 +354,25 @@ class Logbook(QWidget):
         ):
             overview_layout.addWidget(label(f"{caption}   {value}", wrap=True))
         self.detail_layout.addWidget(overview)
+        if recording is not None:
+            black_box, measurements = card("Recorded flight")
+            for caption, value in (
+                ("Gate out", recording.gate_out), ("Takeoff", recording.takeoff),
+                ("Touchdown", recording.touchdown), ("Gate in", recording.gate_in),
+            ):
+                timestamp = datetime.fromisoformat(value)
+                if self.use_local_time:
+                    timestamp = timestamp.astimezone()
+                shown = timestamp.strftime("%Y-%m-%d %H:%M:%S %Z")
+                measurements.addWidget(label(f"{caption}   {shown} (simulator time)", wrap=True))
+            measurements.addWidget(label(f"Gate-to-gate   {recording.block_seconds:g} sec"))
+            measurements.addWidget(label(f"Airborne   {recording.airborne_seconds:g} sec"))
+            rate = recording.landing_rate_fpm
+            measurements.addWidget(label(
+                "Landing rate   Unavailable" if rate is None else f"Landing rate   {rate:g} fpm",
+            ))
+            measurements.addWidget(label(f"Source   {recording.provider}", "muted", wrap=True))
+            self.detail_layout.addWidget(black_box)
         notes, _ = card("Notes", fields.notes or "No notes entered.")
         history, revisions = card("Record History")
         names = {
@@ -355,7 +383,10 @@ class Logbook(QWidget):
         previous = None
         for revision in flight.revisions:
             current = revision.fields
-            summary = "Manual record created" if previous is None else "Flight corrected"
+            if previous is None:
+                summary = "Automatic record created" if recording is not None else "Manual record created"
+            else:
+                summary = "Flight corrected"
             saved_at = datetime.fromisoformat(revision.saved_at)
             shown = saved_at.astimezone() if self.use_local_time else saved_at.astimezone(timezone.utc)
             timestamp = shown.strftime("%Y-%m-%d %H:%M:%S %Z")

@@ -97,3 +97,15 @@ After the read-only run had closed, the owner-requested adjustment was made in a
 On the parked Asobo 747-8i, the generic `FLAPS_UP` event was sent without a change in readback. The advertised `HANDLING_Flaps` input moved the lever to UP. A later sample confirmed both trailing-edge flap angles at effectively zero. The speedbrake was already stowed and disarmed. Four aircraft-specific landing light inputs were set to OFF and verified independently. The taxi light was already on. The parking brake remained set.
 
 The owner confirmed that the cockpit autobrake selector stayed at **3**. Core's `AUTO BRAKE SWITCH CB` reading stayed at 4, which the installed Boeing knob template maps to detent 3. The SDK accepted `SET_AUTOBRAKE_CONTROL` with value 1, but the selector moved to neither OFF nor DISARM. The aircraft's autobrake knob input returned an empty parameter list and was left unused. The autobrake change failed. All sessions were closed.
+
+## First automatic Recorder slice
+
+25 November 2026. An offline flight replay drove the actual Core consumer, Recorder, annual JSON store and EFB History. The simulated flight captured gate out, takeoff, touchdown and gate in, kept the real-world Logbook date separate from simulator timestamps, and saved an observed −180 fpm landing rate. Closing and reopening the EFB preserved the record. Editing the arrival airport preserved its ID and recorded landing rate.
+
+The offline suite also checked pause exclusion, missing touchdown evidence, retry of a failed final write and refusal to save an interrupted capture as a completed flight. The initial replay exposed equal receipt timestamps for several frames. Comparing both receipt timestamp and simulator clock value fixed dropped samples in replay. The full suite passed 138 tests. The normal app launch still needs the Recorder lifecycle and controls. Durable interruption recovery and native in-flight validation are separate milestones.
+
+Use the project Python runtime and the workspace-local PySide6 setup above.
+
+```powershell
+python -B -m unittest discover -s tests -p 'test_*.py' -q
+```

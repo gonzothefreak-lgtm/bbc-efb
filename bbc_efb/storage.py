@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, timezone
 import json
+from math import isfinite
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -49,11 +50,43 @@ class Revision:
 
 
 @dataclass(frozen=True)
+class FlightRecording:
+    provider: str
+    simulated: bool
+    gate_out: str
+    takeoff: str
+    touchdown: str
+    gate_in: str
+    block_seconds: float
+    airborne_seconds: float
+    landing_rate_fpm: float | None = None
+
+    def validated(self):
+        times = [datetime.fromisoformat(value) for value in (
+            self.gate_out, self.takeoff, self.touchdown, self.gate_in,
+        )]
+        if any(value.utcoffset() is None for value in times) or times != sorted(times):
+            raise ValueError("Recorded simulator event times must be ordered and have a time zone.")
+        durations = (self.airborne_seconds, self.block_seconds)
+        if any(type(value) not in (float, int) or not isfinite(value) for value in durations) or not (
+            0 <= self.airborne_seconds <= self.block_seconds
+        ):
+            raise ValueError("Invalid recorded flight durations.")
+        rate = self.landing_rate_fpm
+        if (rate is not None and (type(rate) not in (float, int) or not isfinite(rate) or rate > 0)
+                or not isinstance(self.provider, str) or not self.provider.strip()
+                or type(self.simulated) is not bool):
+            raise ValueError("Invalid recording source or landing rate.")
+        return self
+
+
+@dataclass(frozen=True)
 class Flight:
     id: str
     revisions: tuple[Revision, ...]
     source: str = "manual"
     status: str = "complete"
+    recording: FlightRecording | None = None
 
     @property
     def fields(self):
@@ -102,8 +135,13 @@ class FlightStore:
             raise ValueError("Invalid flight ID.")
         source = payload["source"]
         status = payload["status"]
-        if source != "manual" or status != "complete":
+        recording = payload.get("recording")
+        if source not in ("manual", "automatic") or status != "complete" or (
+            (source == "automatic") != (recording is not None)
+        ):
             raise ValueError("Unsupported flight source or status.")
+        if recording is not None:
+            recording = FlightRecording(**recording).validated()
         revisions = []
         for item in payload["revisions"]:
             saved_at = datetime.fromisoformat(item["saved_at"])
@@ -112,7 +150,7 @@ class FlightStore:
             revisions.append(Revision(item["saved_at"], FlightFields(**item["fields"]).validated()))
         if not revisions:
             raise ValueError("The record has no revisions.")
-        return Flight(flight_id, tuple(revisions), source, status)
+        return Flight(flight_id, tuple(revisions), source, status, recording)
 
     @staticmethod
     def _read_json(path):
@@ -198,6 +236,25 @@ class FlightStore:
         fields = fields.validated()
         with self._locked():
             return self._save_locked(fields, existing)
+
+    def save_recording(self, flight_id, fields, recording):
+        flight_id = str(UUID(flight_id))
+        fields = fields.validated()
+        recording = recording.validated()
+        with self._locked():
+            try:
+                current, _ = self._find(flight_id)
+            except FileNotFoundError:
+                revision = Revision(datetime.now(timezone.utc).isoformat(timespec="seconds"), fields)
+                flight = Flight(flight_id, (revision,), source="automatic", recording=recording)
+                year = fields.flight_date[:4]
+                flights = self._read_year_for_save(year)
+                flights[flight_id] = flight
+                self._write_year(year, flights)
+                return flight
+            if current.recording == recording and current.revisions[0].fields == fields:
+                return current
+            raise RecordConflict("This recording ID already belongs to a different flight.")
 
     def _save_locked(self, fields, existing):
         in_year_file = False
