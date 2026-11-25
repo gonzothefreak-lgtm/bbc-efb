@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
-    QButtonGroup, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
+    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
     QMainWindow, QMessageBox, QSizeGrip, QStackedWidget, QTabWidget, QVBoxLayout,
     QWidget,
 )
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from bbc_core import ConnectionState, ConsumerAPI
 
 from .logbook import Logbook
+from .recorder import FlightRecorder
 from .storage import FlightStore
 from .widgets import button, card, label, page, scroll
 
@@ -51,12 +52,15 @@ class TitleBar(QFrame):
 
 class EfbWindow(QMainWindow):
     def __init__(self, settings=None, *, connection_reader: ConsumerAPI | None = None,
-                 request_connection=None):
+                 request_connection=None, register_recorder=None):
         super().__init__()
         # The window owns this consumer handle. The application host owns Core's session.
         self._connection_reader = connection_reader
         self._request_connection = request_connection
         self._last_connection = None
+        self._register_recorder = register_recorder
+        self._recorder = None
+        self._recorder_error = ""
         self.settings = settings if settings is not None else QSettings("Black Box Club", "BBC EFB")
         self.setWindowTitle("BBC EFB")
         self.setWindowIcon(QIcon(str(ICON_PATH)))
@@ -90,11 +94,15 @@ class EfbWindow(QMainWindow):
         self._refresh_connection()
         if connection_reader is not None:
             self._connection_timer.start()
+        self._recorder_timer = QTimer(self)
+        self._recorder_timer.setInterval(250)
+        self._recorder_timer.timeout.connect(self._update_recorder)
         self._show_section("Dispatch")
 
         folder = self.settings.value("logbook/folder", "", str)
         if folder:
             self._open_folder(Path(folder))
+        self._refresh_recorder_status()
 
     def _make_title_bar(self):
         bar = TitleBar()
@@ -221,8 +229,8 @@ class EfbWindow(QMainWindow):
         folder_card, folder_layout = card("Logbook data folder")
         self.folder_label = label("No local folder selected", "muted", wrap=True)
         folder_layout.addWidget(self.folder_label)
-        folder_layout.addWidget(button("Choose Logbook folder", self._choose_folder, "primary"),
-                                alignment=Qt.AlignmentFlag.AlignLeft)
+        self.choose_folder_button = button("Choose Logbook folder", self._choose_folder, "primary")
+        folder_layout.addWidget(self.choose_folder_button, alignment=Qt.AlignmentFlag.AlignLeft)
         data_layout.addWidget(folder_card)
         tools, _ = card("Import, export and backup", "These tools are in development.")
         data_layout.addWidget(tools)
@@ -256,7 +264,15 @@ class EfbWindow(QMainWindow):
 
         privacy, privacy_layout = page()
         privacy_layout.setContentsMargins(12, 12, 12, 12)
-        retention, _ = card("Flight Logging & Privacy", "Automatic Flight Logging is inactive. Manual records are saved in the local folder you choose. Automatic logging and telemetry retention controls are in development.")
+        retention, logging_layout = card("Flight Logging & Privacy")
+        self.auto_logging = QCheckBox("Enable automatic Flight Logging")
+        self.auto_logging.setChecked(self.settings.value("recorder/enabled", False, bool))
+        self.auto_logging.toggled.connect(self._toggle_recorder)
+        self.recorder_notice = label("", "muted", wrap=True)
+        self.resume_flight = button("Resume flight", self._resume_recording, "primary")
+        self.keep_partial_flight = button("Keep partial flight", self._keep_partial)
+        for item in (self.auto_logging, self.recorder_notice, self.resume_flight, self.keep_partial_flight):
+            logging_layout.addWidget(item, alignment=Qt.AlignmentFlag.AlignLeft)
         privacy_layout.addWidget(retention)
         privacy_layout.addStretch()
         self.settings_tabs.addTab(scroll(privacy), "Flight Logging & Privacy")
@@ -273,10 +289,128 @@ class EfbWindow(QMainWindow):
         for control in (self.connection_status, self.logging_status):
             control.setIconSize(QSize(8, 8))
             layout.addWidget(control)
+        self.start_logging = button("Start Logging", self._start_logging)
+        self.stop_logging = button("Stop Logging", self._stop_logging)
+        layout.addWidget(self.start_logging)
+        layout.addWidget(self.stop_logging)
         layout.addStretch()
         self.resize_grip = QSizeGrip(footer)
         layout.addWidget(self.resize_grip, 0, Qt.AlignmentFlag.AlignBottom)
         return footer
+
+    def _toggle_recorder(self, enabled):
+        self.settings.setValue("recorder/enabled", enabled)
+        self.settings.sync()
+        self._configure_recorder()
+
+    def _configure_recorder(self):
+        if self._recorder is not None:
+            self._recorder_timer.stop()
+            self._recorder.close()
+            self._recorder = None
+        self._recorder_error = ""
+        if self._register_recorder is not None and self.logbook.store is not None and self.auto_logging.isChecked():
+            try:
+                self._recorder = FlightRecorder(self._register_recorder(), self.logbook.store)
+            except (OSError, ValueError) as error:
+                self._recorder_error = str(error)
+            else:
+                self._recorder_timer.start()
+        self._refresh_recorder_status()
+
+    def _refresh_recorder_status(self):
+        recorder = self._recorder
+        status = recorder.status if recorder is not None else "Inactive"
+        text = f"Flight Logging · {status}"
+        if self.logging_status.text() != text:
+            self.logging_status.setText(text)
+            self.logging_status.setIcon(status_dot({
+                "Inactive": "#96a1b0", "Ready": "#60c89c", "Active": "#60c89c", "Interrupted": "#f2ad59",
+            }[status]))
+        locked = recorder is not None and recorder.flight_id is not None
+        can_enable = self._register_recorder is not None and self.logbook.store is not None
+        self.auto_logging.setEnabled(can_enable and not locked)
+        self.choose_folder_button.setEnabled(not locked)
+        self.resume_flight.setVisible(recorder is not None and recorder.can_resume)
+        self.keep_partial_flight.setVisible(status == "Interrupted")
+        self.start_logging.setVisible(recorder is not None and recorder.can_start)
+        self.stop_logging.setVisible(recorder is not None and recorder.can_stop)
+        notice = self._recorder_error
+        if not notice:
+            if status == "Interrupted":
+                notice = recorder.interrupted_reason
+                if not recorder.can_resume:
+                    notice += " Waiting for fresh telemetry from the same flight."
+            elif not can_enable:
+                notice = "Automatic logging requires a configured simulator connection and a Logbook folder."
+            elif recorder is not None and status == "Inactive":
+                notice = "Waiting for a connected simulator and current flight telemetry."
+            elif recorder is not None and recorder.waiting_for_next_flight:
+                notice = "Logging was stopped for this flight. You can start again manually."
+            else:
+                notice = "Records flight events and landing rate when available. Raw replay is off."
+        if notice != self.recorder_notice.text():
+            self.recorder_notice.setText(notice)
+
+    def _start_logging(self):
+        try:
+            self._recorder.start()
+        except (OSError, ValueError) as error:
+            self._recorder_error = str(error)
+            QMessageBox.warning(self, "Flight Logging could not start", str(error))
+        self._refresh_recorder_status()
+
+    def _stop_logging(self):
+        self._recorder_timer.stop()
+        try:
+            choice = QMessageBox.question(
+                self, "Stop Flight Logging", "Save the captured portion of this flight and stop logging?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if choice != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                saved = self._recorder.stop()
+            except (OSError, ValueError) as error:
+                self._recorder_error = str(error)
+                QMessageBox.warning(self, "Flight Logging could not finish saving", str(error))
+            else:
+                if saved is not None:
+                    self.logbook.refresh(self.logbook.store)
+        finally:
+            self._recorder_timer.start()
+            self._refresh_recorder_status()
+
+    def _update_recorder(self):
+        recorder = self._recorder
+        status = recorder.status
+        had_error = bool(self._recorder_error)
+        try:
+            saved = recorder.update()
+        except (OSError, ValueError) as error:
+            self._recorder_error = f"Flight Logging could not save or read the recording. {error}"
+        else:
+            self._recorder_error = ""
+            if saved is not None or recorder.status == "Interrupted" and (had_error or status != "Interrupted"):
+                self.logbook.refresh(self.logbook.store)
+        self._refresh_recorder_status()
+
+    def _resume_recording(self):
+        try:
+            self._recorder.resume()
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "Flight could not resume", str(error))
+        self._refresh_recorder_status()
+
+    def _keep_partial(self):
+        try:
+            self._recorder.keep_partial()
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "Partial flight could not be saved", str(error))
+        else:
+            self.logbook.refresh(self.logbook.store)
+        self._refresh_recorder_status()
 
     def _refresh_connection(self):
         connection = self._connection_reader.connection() if self._connection_reader is not None else None
@@ -331,6 +465,8 @@ class EfbWindow(QMainWindow):
             self._open_folder(Path(folder))
 
     def _open_folder(self, folder):
+        if self._recorder is not None and self._recorder.flight_id is not None:
+            return
         try:
             if not folder.is_dir():
                 raise ValueError("The selected folder is unavailable.")
@@ -345,6 +481,7 @@ class EfbWindow(QMainWindow):
         self.folder_label.setText(str(folder))
         self.folder_prompt.hide()
         self.logbook.refresh(store)
+        self._configure_recorder()
 
     def _change_time_zone(self):
         mode = self.time_zone.currentData()
@@ -378,9 +515,35 @@ class EfbWindow(QMainWindow):
         if not self.logbook.can_leave_editor():
             event.ignore()
             return
+        if self._recorder is not None and self._recorder.flight_id is not None:
+            self._recorder_timer.stop()
+            if not self._confirm_recording_close():
+                self._recorder_timer.start()
+                event.ignore()
+                return
+            try:
+                self._recorder.save_and_exit()
+            except (OSError, ValueError) as error:
+                self._recorder_timer.start()
+                QMessageBox.warning(self, "Flight could not be saved", str(error))
+                event.ignore()
+                return
         super().closeEvent(event)
+        if event.isAccepted() and self._recorder is not None:
+            self._recorder_timer.stop()
+            self._recorder.close()
+            self._recorder = None
         if event.isAccepted() and self._connection_reader is not None:
             self._connection_timer.stop()
             self._connection_reader.close()
             self._connection_reader = None
             self._refresh_connection()
+
+    def _confirm_recording_close(self):
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Flight recording")
+        dialog.setText("Save the current flight for recovery and exit?")
+        save_exit = dialog.addButton("Save & Exit", QMessageBox.ButtonRole.AcceptRole)
+        dialog.setDefaultButton(dialog.addButton(QMessageBox.StandardButton.Cancel))
+        dialog.exec()
+        return dialog.clickedButton() is save_exit

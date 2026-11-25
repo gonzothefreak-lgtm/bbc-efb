@@ -12,7 +12,7 @@ from bbc_core import ConnectionState, Core, CoreRequestError
 from bbc_core.provider import ProviderError
 from bbc_core.simconnect_abi import Receive, ReceiveId
 from bbc_core.simulated import SimulatedProvider
-from test_flight_recorder_offline import RecorderReplay
+from test_flight_recorder_offline import FlightReplay, RecorderReplay
 from test_simconnect_provider_offline import FakeSdk, packet
 
 
@@ -55,10 +55,10 @@ class EfbShellUiTests(TestCase):
         self.data.mkdir()
         self.window = self.open_window()
 
-    def open_window(self, *, connection_reader=None, request_connection=None):
+    def open_window(self, *, connection_reader=None, request_connection=None, register_recorder=None):
         settings = self.settings_type(str(self.root / "settings.ini"), self.settings_type.Format.IniFormat)
         window = self.window_type(settings, connection_reader=connection_reader,
-                                  request_connection=request_connection)
+                                  request_connection=request_connection, register_recorder=register_recorder)
         if connection_reader is not None:
             self.addCleanup(connection_reader.close)
         self.addCleanup(window.deleteLater)
@@ -123,8 +123,8 @@ class EfbShellUiTests(TestCase):
         self.assertFalse(window._connection_timer.isActive())
         self.click(window.logging_status)
         self.assertEqual(window.settings_tabs.tabText(window.settings_tabs.currentIndex()), "Flight Logging & Privacy")
-        self.assertFalse(any(control.text() in {"Start Logging", "Stop Logging"}
-                             for control in window.findChildren(self.button_type)))
+        self.assertFalse(window.start_logging.isVisible())
+        self.assertFalse(window.stop_logging.isVisible())
         self.click(window.section_buttons["Logbook"])
         self.assertTrue(window.logbook._narrow_sidebar)
         window.resize(950, 650)
@@ -315,6 +315,104 @@ class EfbShellUiTests(TestCase):
         self.assertEqual(reopened.logbook.selected.id, flight.id)
         self.assertEqual(reopened.logbook.selected.recording, flight.recording)
         self.assertTrue(reopened.close())
+
+    def test_recorder_window_recovers_saved_active_flight_and_can_keep_it_partial(self):
+        provider = FlightReplay()
+        core = Core(provider)
+        self.addCleanup(core.disconnect)
+        core.connect()
+        self.assertTrue(self.window.close())
+        self.window = self.open_window(connection_reader=core.register_consumer(),
+                                       register_recorder=core.register_consumer)
+        self.pick_folder()
+        self.click(self.window.logging_status)
+        self.assertFalse(self.window.auto_logging.isChecked())
+        self.assertEqual(self.window.logging_status.text(), "Flight Logging · Inactive")
+        self.click(self.window.auto_logging)
+        self.assertTrue(self.window._recorder_timer.isActive())
+        core.pump()
+        for second, speed, brake, status in (
+            (0, 0, True, "Ready"), (1, 3, False, "Ready"), (2, 4, False, "Active"),
+        ):
+            provider.frame(second, speed=speed, brake=brake)
+            core.pump()
+            self.wait(300)
+            self.assertEqual(self.window.logging_status.text(), f"Flight Logging · {status}")
+        store = self.window.logbook.store
+        flight_id = self.window._recorder.flight_id
+
+        with patch.object(self.window, "_confirm_recording_close", return_value=False):
+            self.assertFalse(self.window.close())
+        self.assertTrue(self.window._recorder_timer.isActive())
+        with (patch.object(self.window, "_confirm_recording_close", return_value=True),
+              patch.object(store, "save_recording", side_effect=OSError("Disk busy")),
+              patch("bbc_efb.shell.QMessageBox.warning") as warning):
+            self.assertFalse(self.window.close())
+            warning.assert_called_once()
+        with patch.object(self.window, "_confirm_recording_close", return_value=True):
+            self.assertTrue(self.window.close())
+        core.disconnect()
+        core.connect()
+
+        reopened = self.open_window(connection_reader=core.register_consumer(),
+                                    register_recorder=core.register_consumer)
+        self.assertEqual(reopened.logging_status.text(), "Flight Logging · Interrupted")
+        self.click(reopened.logging_status)
+        self.assertFalse(reopened.resume_flight.isVisible())
+        core.pump()
+        provider.frame(3, speed=5, brake=False)
+        core.pump()
+        self.wait(300)
+        self.assertTrue(reopened.resume_flight.isVisible())
+        self.click(reopened.keep_partial_flight)
+        self.assertIsNone(store.get(flight_id).checkpoint)
+        self.click(reopened.section_buttons["Logbook"])
+        self.click(reopened.logbook.nav["Flight History"])
+        history = reopened.logbook.history[1]
+        self.assertEqual(history.item(0, 7).text(), "Interrupted")
+        self.assertEqual(reopened.logbook.dashboard[1][0].text(), "0")
+        history.selectRow(0)
+        self.click(self.find_button(reopened, "Open flight"))
+        captions = [item.text() for item in reopened.logbook.detail.findChildren(self.label_type)]
+        self.assertIn("Touchdown   Unknown", captions)
+        self.assertTrue(reopened.close())
+
+    def test_manual_logging_buttons_follow_state_and_stop_requires_confirmation(self):
+        provider = FlightReplay()
+        core = Core(provider)
+        self.addCleanup(core.disconnect)
+        core.connect()
+        self.assertTrue(self.window.close())
+        self.window = self.open_window(connection_reader=core.register_consumer(),
+                                       register_recorder=core.register_consumer)
+        self.pick_folder()
+        self.click(self.window.logging_status)
+        self.click(self.window.auto_logging)
+        self.assertFalse(self.window.start_logging.isVisible())
+        core.pump()
+        provider.frame(30, ground=False, speed=150, brake=False)
+        core.pump()
+        self.wait(300)
+        self.click(self.window.start_logging)
+        self.assertFalse(self.window.start_logging.isVisible())
+        self.assertTrue(self.window.stop_logging.isVisible())
+        with patch("bbc_efb.shell.QMessageBox.question", return_value=self.message_box.StandardButton.Cancel):
+            self.click(self.window.stop_logging)
+        self.assertTrue(self.window.stop_logging.isVisible())
+        with patch("bbc_efb.shell.QMessageBox.question", return_value=self.message_box.StandardButton.Yes):
+            self.click(self.window.stop_logging)
+        self.assertFalse(self.window.stop_logging.isVisible())
+        self.assertTrue(self.window.start_logging.isVisible())
+        self.click(self.window.section_buttons["Logbook"])
+        self.click(self.window.logbook.nav["Flight History"])
+        history = self.window.logbook.history[1]
+        self.assertEqual(history.item(0, 7).text(), "Stopped")
+        history.selectRow(0)
+        self.click(self.find_button(self.window, "Open flight"))
+        captions = [item.text() for item in self.window.logbook.detail.findChildren(self.label_type)]
+        self.assertIn("Takeoff   Unknown", captions)
+        self.assertIn("Stopped by pilot", captions)
+        self.assertTrue(self.window.close())
 
     def test_cancel_keeps_unsaved_edits_open_and_discard_allows_close(self):
         logbook = self.open_manual_editor()

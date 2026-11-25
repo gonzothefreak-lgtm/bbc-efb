@@ -35,7 +35,8 @@ def main(argv=None):
 
     reader = session.core.register_consumer()
     try:
-        window = EfbWindow(connection_reader=reader, request_connection=session.request_connection)
+        window = EfbWindow(connection_reader=reader, request_connection=session.request_connection,
+                           register_recorder=session.core.register_consumer)
         session.start()
         try:
             window.show()

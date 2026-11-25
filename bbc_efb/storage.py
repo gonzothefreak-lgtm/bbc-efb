@@ -50,22 +50,60 @@ class Revision:
 
 
 @dataclass(frozen=True)
+class RecordingGap:
+    after: str
+    before: str | None = None
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class RecordingCheckpoint:
+    sim_time: float
+    latitude: float
+    longitude: float
+    on_ground: bool
+    takeoff_elapsed: float | None
+
+    def validated(self):
+        numbers = (self.sim_time, self.latitude, self.longitude)
+        if any(type(x) not in (int, float) or not isfinite(x) for x in numbers) or not (
+            0 < self.sim_time < 315537897600 and -90 <= self.latitude <= 90
+            and -180 <= self.longitude <= 180 and type(self.on_ground) is bool
+        ):
+            raise ValueError("Invalid Recorder checkpoint position or clock.")
+        value = self.takeoff_elapsed
+        if value is not None and (type(value) not in (int, float) or not isfinite(value) or value < 0):
+            raise ValueError("Invalid Recorder takeoff checkpoint.")
+        return self
+
+
+@dataclass(frozen=True)
 class FlightRecording:
     provider: str
     simulated: bool
-    gate_out: str
-    takeoff: str
-    touchdown: str
-    gate_in: str
+    gate_out: str | None
+    takeoff: str | None
+    touchdown: str | None
+    gate_in: str | None
     block_seconds: float
     airborne_seconds: float
     landing_rate_fpm: float | None = None
+    gaps: tuple[RecordingGap, ...] = ()
+    manual_start: str | None = None
+    manual_start_airborne: bool = False
+    manual_stop: str | None = None
 
     def validated(self):
         times = [datetime.fromisoformat(value) for value in (
-            self.gate_out, self.takeoff, self.touchdown, self.gate_in,
-        )]
-        if any(value.utcoffset() is None for value in times) or times != sorted(times):
+            self.gate_out, self.manual_start, self.takeoff, self.touchdown, self.gate_in, self.manual_stop,
+        ) if value is not None]
+        if (bool(self.gate_out) == bool(self.manual_start)
+                or type(self.manual_start_airborne) is not bool
+                or self.manual_start_airborne and (not self.manual_start or self.takeoff is not None)
+                or self.touchdown is not None and self.takeoff is None and not self.manual_start_airborne
+                or self.gate_in is not None and self.touchdown is None
+                or self.gate_in is not None and self.manual_stop is not None
+                or any(value.utcoffset() is None for value in times) or times != sorted(times)):
             raise ValueError("Recorded simulator event times must be ordered and have a time zone.")
         durations = (self.airborne_seconds, self.block_seconds)
         if any(type(value) not in (float, int) or not isfinite(value) for value in durations) or not (
@@ -77,7 +115,21 @@ class FlightRecording:
                 or not isinstance(self.provider, str) or not self.provider.strip()
                 or type(self.simulated) is not bool):
             raise ValueError("Invalid recording source or landing rate.")
+        for gap in self.gaps:
+            after = datetime.fromisoformat(gap.after)
+            before = datetime.fromisoformat(gap.before) if gap.before is not None else None
+            if (after.utcoffset() is None or before is not None
+                    and (before.utcoffset() is None or before < after) or not gap.reason):
+                raise ValueError("Invalid recording gap.")
         return self
+
+    def validate_checkpoint(self, checkpoint):
+        checkpoint.validated()
+        takeoff = checkpoint.takeoff_elapsed
+        if (self.gate_in is not None or self.manual_stop is not None
+                or (self.takeoff is not None or self.manual_start_airborne) != (takeoff is not None)
+                or takeoff is not None and takeoff + self.airborne_seconds > self.block_seconds + 1e-6):
+            raise ValueError("The Recorder checkpoint does not match its flight events.")
 
 
 @dataclass(frozen=True)
@@ -87,6 +139,8 @@ class Flight:
     source: str = "manual"
     status: str = "complete"
     recording: FlightRecording | None = None
+    checkpoint: RecordingCheckpoint | None = None
+    manual_hold: str | None = None
 
     @property
     def fields(self):
@@ -136,12 +190,25 @@ class FlightStore:
         source = payload["source"]
         status = payload["status"]
         recording = payload.get("recording")
-        if source not in ("manual", "automatic") or status != "complete" or (
+        checkpoint = payload.get("checkpoint")
+        manual_hold = payload.get("manual_hold")
+        if source not in ("manual", "automatic") or status not in ("complete", "interrupted") or (
             (source == "automatic") != (recording is not None)
+            or status == "interrupted" and source != "automatic"
+            or checkpoint is not None and status != "interrupted"
         ):
             raise ValueError("Unsupported flight source or status.")
         if recording is not None:
+            recording = dict(recording)
+            recording["gaps"] = tuple(RecordingGap(**gap) for gap in recording.get("gaps", ()))
             recording = FlightRecording(**recording).validated()
+            if (status == "complete") != (recording.gate_in is not None):
+                raise ValueError("Flight status does not match its recorded events.")
+        if manual_hold is not None:
+            FlightStore._validate_manual_hold(recording, manual_hold)
+        if checkpoint is not None:
+            checkpoint = RecordingCheckpoint(**checkpoint)
+            recording.validate_checkpoint(checkpoint)
         revisions = []
         for item in payload["revisions"]:
             saved_at = datetime.fromisoformat(item["saved_at"])
@@ -150,7 +217,7 @@ class FlightStore:
             revisions.append(Revision(item["saved_at"], FlightFields(**item["fields"]).validated()))
         if not revisions:
             raise ValueError("The record has no revisions.")
-        return Flight(flight_id, tuple(revisions), source, status, recording)
+        return Flight(flight_id, tuple(revisions), source, status, recording, checkpoint, manual_hold)
 
     @staticmethod
     def _read_json(path):
@@ -237,24 +304,64 @@ class FlightStore:
         with self._locked():
             return self._save_locked(fields, existing)
 
-    def save_recording(self, flight_id, fields, recording):
+    def save_recording(self, flight_id, fields, recording, *, checkpoint=None, previous=None, manual_hold=None):
         flight_id = str(UUID(flight_id))
         fields = fields.validated()
         recording = recording.validated()
+        if checkpoint is not None:
+            recording.validate_checkpoint(checkpoint)
+        if manual_hold is not None:
+            self._validate_manual_hold(recording, manual_hold)
+        status = "interrupted" if recording.gate_in is None else "complete"
         with self._locked():
             try:
                 current, _ = self._find(flight_id)
             except FileNotFoundError:
                 revision = Revision(datetime.now(timezone.utc).isoformat(timespec="seconds"), fields)
-                flight = Flight(flight_id, (revision,), source="automatic", recording=recording)
-                year = fields.flight_date[:4]
-                flights = self._read_year_for_save(year)
-                flights[flight_id] = flight
-                self._write_year(year, flights)
-                return flight
-            if current.recording == recording and current.revisions[0].fields == fields:
-                return current
-            raise RecordConflict("This recording ID already belongs to a different flight.")
+                if previous is not None:
+                    raise RecordConflict("This recording is no longer available.")
+                flight = Flight(flight_id, (revision,), "automatic", status, recording, checkpoint, manual_hold)
+            else:
+                if (current.recording == recording and current.checkpoint == checkpoint
+                        and current.manual_hold == manual_hold
+                        and current.revisions[0].fields.aircraft == fields.aircraft):
+                    return current
+                if (previous is None or current.id != previous.id or current.source != "automatic"
+                        or current.status != "interrupted" or current.recording != previous.recording
+                        or current.checkpoint != previous.checkpoint):
+                    raise RecordConflict("This recording changed. Reopen it before continuing.")
+                # Keep pilot corrections while advancing the saved capture.
+                revisions = current.revisions
+                if not any(revision.fields.minutes is not None for revision in revisions):
+                    revised = replace(current.fields, minutes=fields.minutes)
+                    if revised != current.fields:
+                        revisions += (Revision(datetime.now(timezone.utc).isoformat(timespec="seconds"), revised),)
+                flight = replace(current, revisions=revisions, status=status, recording=recording,
+                                 checkpoint=checkpoint, manual_hold=manual_hold)
+            year = flight.fields.flight_date[:4]
+            flights = self._read_year_for_save(year)
+            flights[flight_id] = flight
+            self._write_year(year, flights)
+            return flight
+
+    @staticmethod
+    def _validate_manual_hold(recording, phase):
+        if recording is None or recording.manual_stop is None or phase not in ("taxi_out", "airborne", "taxi_in"):
+            raise ValueError("Manual stop suppression requires a stopped flight and valid phase.")
+
+    def set_manual_hold(self, previous, phase):
+        with self._locked():
+            current, _ = self._find(previous.id)
+            if current.manual_hold != previous.manual_hold:
+                raise RecordConflict("The stopped flight changed. Reopen it before continuing.")
+            if phase is not None:
+                self._validate_manual_hold(current.recording, phase)
+            updated = replace(current, manual_hold=phase)
+            year = updated.fields.flight_date[:4]
+            flights = self._read_year_for_save(year)
+            flights[updated.id] = updated
+            self._write_year(year, flights)
+            return updated
 
     def _save_locked(self, fields, existing):
         in_year_file = False

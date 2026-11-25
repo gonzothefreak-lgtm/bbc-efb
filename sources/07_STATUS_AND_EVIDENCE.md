@@ -109,3 +109,23 @@ Use the project Python runtime and the workspace-local PySide6 setup above.
 ```powershell
 python -B -m unittest discover -s tests -p 'test_*.py' -q
 ```
+
+## Automatic Flight Logging and recovery
+
+25 November 2026. The EFB launcher now supplies a read-only Recorder consumer from the same Core session. The offline window test verified opt-in, Inactive, Ready, Active and Interrupted states, Cancel and Save & Exit, a failed save keeping the window open, restart, visibility of Resume flight, and keeping a partial entry in History. Recorder tests verified automatic resumption after matching fresh reconnect telemetry, explicit restart resumption of the same flight ID with an excluded gap, preservation of pilot corrections, recovery from a prior checkpoint and rejection of a different aircraft or distant position.
+
+All 142 offline tests passed using the existing Qt setup and in-memory replay. No native DLL, MSFS session or packaged build was used. Pilot Start and Stop controls, native continuity and timing checks, and the separate live flight remain pending.
+
+```powershell
+python -B -m unittest discover -s tests -p 'test_*.py' -q
+```
+
+## Manual Flight Logging controls
+
+25 November 2026. The EFB footer offers Start Logging while the opted-in Recorder is ready and Stop Logging while it can stop an active flight. The Qt test verified that the controls follow the Recorder state, that cancelling Stop continues recording, and that a confirmed stop appears as Stopped in History. Offline replay also verified a mid-flight start with unknown takeoff and a measured arrival, suppression across an app restart until parking, an explicit start after stopping, and retry of a failed Stop save with the original cutoff.
+
+All 146 offline tests passed. These tests used in-memory telemetry and Qt's offscreen platform. The live MSFS flight check and Windows packaging remain pending.
+
+```powershell
+python -B -m unittest discover -s tests -p 'test_*.py' -q
+```
